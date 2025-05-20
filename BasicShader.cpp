@@ -174,7 +174,9 @@ Mesh* sun;
 
 bool Initialise()
 {
-    // Déplacer la création de la fenêtre depuis main()
+    // Configurer GLFW pour permettre le redimensionnement
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    
     g_Window = glfwCreateWindow(width, height, "OpenGL Window", nullptr, nullptr);
     if (!g_Window) {
         std::cerr << "Erreur : Impossible de créer la fenêtre GLFW" << std::endl;
@@ -186,6 +188,13 @@ bool Initialise()
     // Ajouter les callbacks pour la souris
     glfwSetCursorPosCallback(g_Window, mouse_callback);
     glfwSetInputMode(g_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    // Configurer le callback de redimensionnement
+    glfwSetFramebufferSizeCallback(g_Window, [](GLFWwindow* window, int w, int h) {
+        width = w;
+        height = h;
+        glViewport(0, 0, width, height);
+    });
 
     // Initialisation de GLEW
     if (glewInit() != GLEW_OK) {
@@ -289,10 +298,29 @@ bool Initialise()
 	// dragon->setPosition(0.0f, 0.0f, 0.0f);
 	// sceneObjects.push_back(dragon);
 
-	// Initialisation d'ImGui
+	// Configuration d'ImGui avec une plus grande taille de police
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.FontGlobalScale = 1.5f; // Augmente la taille globale des éléments ImGui
+    
+    // Style personnalisé pour ImGui
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowPadding = ImVec2(15, 15);
+    style.FramePadding = ImVec2(5, 5);
+    style.ItemSpacing = ImVec2(12, 8);
+    style.ItemInnerSpacing = ImVec2(8, 6);
+    style.WindowRounding = 12.0f;
+    style.FrameRounding = 5.0f;
+    style.PopupRounding = 10.0f;
+    style.ScrollbarRounding = 10.0f;
+    style.GrabRounding = 5.0f;
+    
+    // Augmenter la taille des widgets
+    style.ScrollbarSize = 18;
+    style.GrabMinSize = 20;
+    style.WindowTitleAlign = ImVec2(0.5f, 0.5f);  // Centre les titres des fenêtres
+
 	ImGui::StyleColorsDark();
 	ImGui_ImplGlfw_InitForOpenGL(g_Window, true);
 	ImGui_ImplOpenGL3_Init("#version 130");
@@ -374,46 +402,52 @@ void Render()
 	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
 	glUniformMatrix4fv(loc_view, 1, GL_FALSE, view);
 
-	// Configuration de la lumière
+	// Mise à jour de la position de la lumière
 	const float* sunPos = sun->getPosition();
 	float lightDir[3] = {
-		sunPos[0],
+		sunPos[0],  // Position absolue du soleil
 		sunPos[1],
 		sunPos[2]
 	};
+	
+	// Mise à jour des paramètres de la lumière
 	float lightDiffuse[3] = {
 		light_color[0] * light_intensity,
 		light_color[1] * light_intensity,
 		light_color[2] * light_intensity
 	};
+	
 	float lightSpecular[3] = {
-		light_color[0] * light_intensity * 0.5f,
-		light_color[1] * light_intensity * 0.5f,
-		light_color[2] * light_intensity * 0.5f
+		light_color[0] * light_intensity,
+		light_color[1] * light_intensity,
+		light_color[2] * light_intensity
 	};
-    
-    GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
-    GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
-    GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
-    GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
-    
-    glUniform1f(loc_intensity, light_intensity);
-    glUniform3fv(loc_lightDir, 1, lightDir);
-    glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-    glUniform3fv(loc_lightSpecular, 1, lightSpecular);
 
-    // Configuration du matériau
-    float matDiffuse[3] = {0.8f, 0.8f, 0.8f};	
-    float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-    float matShininess = 20.0f;
-    
-    GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
-    GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
-    GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
-    
-    glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-    glUniform3fv(loc_matSpecular, 1, matSpecular);
-    glUniform1f(loc_matShininess, matShininess);
+	// Passer la position du soleil directement au shader
+	GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
+	glUniform3fv(loc_lightDir, 1, lightDir);  // Utiliser directement la position du soleil
+
+	// Configuration de la lumière
+	GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
+	GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
+	GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
+	
+	glUniform1f(loc_intensity, light_intensity);
+	glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+	glUniform3fv(loc_lightSpecular, 1, lightSpecular);
+
+	// Configuration du matériau
+	float matDiffuse[3] = {0.8f, 0.8f, 0.8f};	
+	float matSpecular[3] = {1.0f, 1.0f, 1.0f};
+	float matShininess = 20.0f;
+	
+	GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
+	GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
+	GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
+	
+	glUniform3fv(loc_matDiffuse, 1, matDiffuse);
+	glUniform3fv(loc_matSpecular, 1, matSpecular);
+	glUniform1f(loc_matShininess, matShininess);
 
 	//camera position
 	GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
@@ -439,9 +473,10 @@ void Render()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	// Fenêtre de debug
+	// Ajuster la taille des fenêtres ImGui en fonction de la taille de la fenêtre
+	ImGui::SetNextWindowSize(ImVec2(width * 0.3f, height * 0.7f), ImGuiCond_FirstUseEver);
 	if (show_debug_window) {
-		ImGui::Begin("Debug", &show_debug_window);
+		ImGui::Begin("Debug", &show_debug_window, ImGuiWindowFlags_NoCollapse);
 		ImGui::Text("FPS: %.1f", fps);
 		ImGui::Text("Camera Position: (%.1f, %.1f, %.1f)", 
 			camera.position[0], camera.position[1], camera.position[2]);
@@ -523,7 +558,8 @@ void Render()
 	}
 
 	if (show_settings) {
-		ImGui::Begin("Light Settings", &show_settings);
+		ImGui::SetNextWindowSize(ImVec2(width * 0.25f, height * 0.3f), ImGuiCond_FirstUseEver);
+		ImGui::Begin("Light Settings", &show_settings, ImGuiWindowFlags_NoCollapse);
 		ImGui::ColorEdit3("Light Color", light_color);
 		ImGui::SliderFloat("Light Intensity", &light_intensity, 0.0f, 10.0f);
 		ImGui::End();

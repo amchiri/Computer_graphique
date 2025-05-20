@@ -36,34 +36,43 @@ void main() {
     }
     
     vec3 norm = normalize(v_normal);
+    
+    // Direction de la lumière venant du soleil vers le fragment
     vec3 lightVec = u_light.direction - v_position;
     float dist = length(lightVec);
-    vec3 lightDir = normalize(lightVec);
-    vec3 viewDir = normalize(u_viewPos - v_position);
+    vec3 lightDir = normalize(lightVec);  // Normaliser pour avoir uniquement la direction
     
-    // Utiliser l'intensité de la lumière
-    vec3 adjustedLightColor = u_light.diffuseColor * u_intensity;
-    
-    // Ambient avec la couleur de la lumière
-    vec3 ambient = vec3(0.1) * adjustedLightColor * texture(u_texture, v_uv).rgb;
-    
-    // Diffuse avec la couleur et l'intensité de la lumière
+    // Calcul de l'éclairage diffus avec cut-off pour l'ombre
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = adjustedLightColor * u_material.diffuseColor * diff * texture(u_texture, v_uv).rgb;
     
-    // Specular avec la couleur et l'intensité de la lumière
-    vec3 H = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(norm, H), 0.0), u_material.shininess);
-    vec3 specular = u_light.specularColor * u_material.specularColor * spec;
+    // Lumière ambiante très faible pour les zones dans l'ombre
+    vec3 ambient = vec3(0.05) * texture(u_texture, v_uv).rgb;
     
-    // Atténuation basée sur la distance
-    float attenuation = 1.0 / (1.0 + 0.045 * dist + 0.0075 * dist * dist);
+    // Calcul diffus plus prononcé
+    vec3 diffuse = u_light.diffuseColor * diff * texture(u_texture, v_uv).rgb;
     
-    vec3 result = ambient + (diffuse + specular) * attenuation;
+    // Calcul spéculaire uniquement si la surface est éclairée
+    vec3 viewDir = normalize(u_viewPos - v_position);
+    vec3 specular = vec3(0.0);
+    float specularStrength = 0.5;
+    if (diff > 0.0) {
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_material.shininess);
+        specular = specularStrength * spec * u_light.specularColor;
+    }
     
-    // HDR tone mapping
+    // Atténuation quadratique plus prononcée avec la distance
+    float constant = 1.0;
+    float linear = 0.09;
+    float quadratic = 0.032;
+    float attenuation = 1.0 / (constant + linear * dist + quadratic * (dist * dist));
+    
+    // Combiner les composantes
+    vec3 result = (ambient + (diffuse + specular) * attenuation) * u_intensity;
+    
+    // Tone mapping HDR
     result = result / (result + vec3(1.0));
-    result = pow(result, vec3(1.0/2.2));  // gamma correction
+    result = pow(result, vec3(1.0/2.2)); // Correction gamma
     
     FragColor = vec4(result, 1.0);
 }
