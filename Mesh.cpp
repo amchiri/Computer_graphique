@@ -119,6 +119,10 @@ void Mesh::setMaterial(const Material& mat) {
     material = mat;
 }
 
+const Material& Mesh::getMaterial() const {
+    return material;
+}
+
 const float* Mesh::getPosition() const {
     return position;
 }

@@ -31,6 +31,7 @@ public:
     void setRotation(const Mat4& rotationMatrix); // Nouveau
     void setRotation(float x, float y, float z); // Garde l'ancien pour compatibilité
     void setScale(float x, float y, float z);
+    const Material& getMaterial() const; // Nouvelle méthode
     void setMaterial(const Material& mat);
     void createSphere(float radius, int sectors, int stacks);
     const float* getPosition() const;

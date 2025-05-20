@@ -197,31 +197,29 @@ Mesh* sun;
 
 void loadPlanetTextures() {
     const char* texturePaths[] = {
-        "mercury.png",
-        "venus.png",
-        "earth.png",
-        "mars.png",
-        "jupiter.png",
-        "saturn.png",
-        "uranus.png"
+        "dragon.png",  // À remplacer par les vraies textures plus tard
+        "dragon.png",
+        "dragon.png",
+        "dragon.png",
+        "dragon.png",
+        "dragon.png",
+        "dragon.png"
     };
 
     for(size_t i = 0; i < planets.size(); i++) {
-        int texWidth, texHeight, texChannels;
-        unsigned char* data = stbi_load(texturePaths[i], &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        
-        if (data) {
-            glGenTextures(1, &planets[i].texture);
-            glBindTexture(GL_TEXTURE_2D, planets[i].texture);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-            glGenerateMipmap(GL_TEXTURE_2D);
-            stbi_image_free(data);
-        } else {
-            std::cerr << "Failed to load texture: " << texturePaths[i] << std::endl;
+        Planet& planet = planets[i];
+        if (planet.mesh) {
+            // Charger et configurer la texture pour chaque planète
+            Material planetMaterial;
+            planet.mesh->loadTexture(texturePaths[i]);  // Utiliser la méthode loadTexture de Mesh
+            
+            // Configuration du matériau de base
+            planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
+            planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
+            planetMaterial.shininess = 32.0f;
+            planetMaterial.isEmissive = false;
+            
+            planet.mesh->setMaterial(planetMaterial);
         }
     }
 }
@@ -472,6 +470,15 @@ void createPlanets() {
         Planet planet;
         planet.mesh = new Mesh();
         planet.mesh->createSphere(1.0f, 32, 32);
+        
+        // Configuration du matériau
+        Material planetMaterial;
+        planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
+        planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
+        planetMaterial.shininess = 32.0f;
+        planetMaterial.isEmissive = false;
+        planet.mesh->setMaterial(planetMaterial);
+        
         planet.mesh->setScale(planetData[i][2], planetData[i][2], planetData[i][2]);
         planet.orbitRadius = planetData[i][0];
         planet.rotationSpeed = planetData[i][1];
@@ -488,8 +495,8 @@ void createPlanets() {
 void updatePlanets() {
     float time = glfwGetTime();
     const float* sunPos = sun->getPosition();
-    Mat4 baseTransform = Mat4::identity();
     
+    // Mettre à jour la position des planètes
     for(size_t i = 0; i < planets.size(); i++) {
         Planet& planet = planets[i];
         
@@ -509,25 +516,29 @@ void updatePlanets() {
         Mat4 finalTransform = orbitalTransform * rotationMatrix;
         planet.mesh->setTransform(finalTransform);
         
-        // Mettre à jour la position pour le système d'éclairage
-        const float* pos = planet.mesh->getPosition();
-        float lightDir[3] = {
-            sunPos[0] - pos[0],
-            sunPos[1] - pos[1],
-            sunPos[2] - pos[2]
+        // Calculer la direction de la lumière à partir du soleil vers la planète
+        const float* planetPos = planet.mesh->getPosition();
+        float dirToSun[3] = {
+            sunPos[0] - planetPos[0],
+            sunPos[1] - planetPos[1],
+            sunPos[2] - planetPos[2]
         };
-        // Normaliser le vecteur de direction de la lumière
-        float len = sqrt(lightDir[0]*lightDir[0] + lightDir[1]*lightDir[1] + lightDir[2]*lightDir[2]);
-        lightDir[0] /= len;
-        lightDir[1] /= len;
-        lightDir[2] /= len;
         
-        // Définir le matériau en fonction de la distance au soleil
-        Material mat;
-        float distToSun = sqrt((pos[0]-sunPos[0])*(pos[0]-sunPos[0]) + 
-                             (pos[1]-sunPos[1])*(pos[1]-sunPos[1]) + 
-                             (pos[2]-sunPos[2])*(pos[2]-sunPos[2]));
-        float lightIntensity = 1.0f / (1.0f + 0.01f * distToSun);
+        // Calculer la distance au soleil
+        float distToSun = sqrt(
+            dirToSun[0] * dirToSun[0] + 
+            dirToSun[1] * dirToSun[1] + 
+            dirToSun[2] * dirToSun[2]
+        );
+
+        // Normaliser la direction
+        dirToSun[0] /= distToSun;
+        dirToSun[1] /= distToSun;
+        dirToSun[2] /= distToSun;
+        
+        // Mettre à jour le matériau avec la direction calculée
+        Material mat = planet.mesh->getMaterial();
+        float lightIntensity = 1.5f / (1.0f + 0.01f * distToSun);
         mat.diffuse[0] = mat.diffuse[1] = mat.diffuse[2] = lightIntensity;
         planet.mesh->setMaterial(mat);
     }
@@ -576,8 +587,8 @@ void Render()
 	glViewport(0, 0, width, height);
 	glEnable(GL_DEPTH_TEST);
 
-	// clean des couleurs
-	glClearColor(0.5f, 0.5f, 0.5f, 1.f);
+	// Nettoyer le buffer avec une couleur noire
+	glClearColor(0.0f, 0.0f, 0.0f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	auto basicProgram = g_BasicShader.GetProgram();
@@ -620,7 +631,7 @@ void Render()
 	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
 	glUniformMatrix4fv(loc_view, 1, GL_FALSE, view);
 
-	// Rendre le skybox en premier
+	// Rendre le skybox en premier, mais après avoir configuré les matrices
 	glDepthFunc(GL_LEQUAL);
 	glUseProgram(g_SkyboxShader.GetProgram());
 
@@ -640,61 +651,54 @@ void Render()
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, skyboxTexture);
 	glDrawArrays(GL_TRIANGLES, 0, 36);
+
+	// Réinitialiser les états OpenGL pour le rendu normal
 	glDepthFunc(GL_LESS);
+	glUseProgram(basicProgram);
 
-	// Mise à jour de la position de la lumière et configuration
+	// Mise à jour de la position de la lumière pour qu'elle suive le soleil
 	const float* sunPos = sun->getPosition();
-    
-    // Configuration de la lumière - correction de l'appel glUniform3f
-    GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
-    // Passer les composantes individuellement au lieu du pointeur
-    glUniform3f(loc_lightDir, 
-                (float)sunPos[0], 
-                (float)sunPos[1], 
-                (float)sunPos[2]);
+	GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
+	
+	// La direction de la lumière est la position du soleil
+	glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
+	
+	// Augmenter l'intensité de la lumière du soleil
+	float lightDiffuse[3] = {
+		light_color[0] * light_intensity * 2.0f,
+		light_color[1] * light_intensity * 2.0f,
+		light_color[2] * light_intensity * 2.0f
+	};
 
-    // Calculer les couleurs de la lumière
-    float lightDiffuse[3] = {
-        light_color[0] * light_intensity,
-        light_color[1] * light_intensity,
-        light_color[2] * light_intensity
-    };
-    
-    float lightSpecular[3] = {
-        light_color[0] * light_intensity,
-        light_color[1] * light_intensity,
-        light_color[2] * light_intensity
-    };
+	// Configuration de la lumière - Utiliser la position du soleil comme source de lumière
+	GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
+	GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
+	GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
+	
+	glUniform1f(loc_intensity, light_intensity);
+	glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+	glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
 
-    // Configuration des paramètres de la lumière
-    GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
-    GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
-    GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
-    
-    glUniform1f(loc_intensity, light_intensity);
-    glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-    glUniform3fv(loc_lightSpecular, 1, lightSpecular);
+	// Configuration du matériau
+	float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
+	float matSpecular[3] = {1.0f, 1.0f, 1.0f};
+	float matShininess = 20.0f;
+	
+	GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
+	GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
+	GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
+	
+	glUniform3fv(loc_matDiffuse, 1, matDiffuse);
+	glUniform3fv(loc_matSpecular, 1, matSpecular);
+	glUniform1f(loc_matShininess, matShininess);
 
-    // Configuration du matériau
-    float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
-    float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-    float matShininess = 20.0f;
-    
-    GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
-    GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
-    GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
-    
-    glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-    glUniform3fv(loc_matSpecular, 1, matSpecular);
-    glUniform1f(loc_matShininess, matShininess);
+	// Position de la caméra
+	GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
+	glUniform3fv(loc_viewPos, 1, camera.position);
 
-    // Position de la caméra
-    GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
-    glUniform3fv(loc_viewPos, 1, camera.position);
-
-    // Gestion des objets émissifs
-    GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
-    glUniform1i(loc_isEmissive, 0);
+	// Gestion des objets émissifs
+	GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
+	glUniform1i(loc_isEmissive, 0);
 
 	// Récupération du buffer VAO
 	glBindVertexArray(VAO);
@@ -707,6 +711,12 @@ void Render()
 
 	// Dessiner tous les objets de la scène
 	for(Mesh* obj : sceneObjects) {
+        // Ne pas appliquer l'éclairage au soleil
+        if(obj == sun) {
+            Material sunMat = obj->getMaterial();
+            sunMat.isEmissive = true;
+            obj->setMaterial(sunMat);
+        }
 		obj->draw(g_BasicShader);
 	}
 

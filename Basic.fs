@@ -30,41 +30,37 @@ uniform float u_intensity;
 out vec4 FragColor;
 
 void main() {
+    vec4 texColor = texture(u_texture, v_uv);
+    
     if (u_material.isEmissive) {
-        FragColor = vec4(u_material.diffuseColor * 2.0, 1.0);
+        FragColor = vec4(u_material.diffuseColor, 1.0);
         return;
     }
     
-    vec3 norm = normalize(v_normal);
-    
-    // Calcul de la direction de la lumière en fonction de la position du soleil
-    vec3 lightVec = normalize(u_light.direction - v_position);
+    // Direction de la lumière du soleil vers le fragment
+    vec3 lightDir = normalize(u_light.direction - v_position);
     float dist = length(u_light.direction - v_position);
     
-    // Atténuation en fonction de la distance
-    float attenuationFactor = 1.0 / (1.0 + 0.01 * dist + 0.001 * dist * dist);
+    // Atténuation plus progressive
+    float attenuationFactor = 1.0 / (1.0 + 0.005 * dist);
     
-    // Calcul de l'éclairage diffus avec cut-off pour l'ombre
-    float diff = max(dot(norm, lightVec), 0.0);
+    vec3 norm = normalize(v_normal);
+    float diff = max(dot(norm, lightDir), 0.0);
     
-    // Lumière ambiante ajustée pour les zones dans l'ombre
-    vec3 ambient = vec3(0.1) * texture(u_texture, v_uv).rgb;
+    // Lumière ambiante plus forte pour compenser
+    vec3 ambient = vec3(0.2) * texColor.rgb;
     
-    // Calcul diffus avec atténuation de distance
-    vec3 diffuse = u_light.diffuseColor * diff * texture(u_texture, v_uv).rgb * attenuationFactor;
+    // Lumière diffuse avec texture
+    vec3 diffuse = u_light.diffuseColor * diff * texColor.rgb * attenuationFactor;
     
-    // Calcul spéculaire amélioré
+    // Spéculaire
     vec3 viewDir = normalize(u_viewPos - v_position);
-    vec3 reflectDir = reflect(-lightVec, norm);
+    vec3 reflectDir = reflect(-lightDir, norm);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_material.shininess);
     vec3 specular = u_light.specularColor * spec * attenuationFactor;
     
-    // Combiner les composantes avec intensité
     vec3 result = (ambient + diffuse + specular) * u_intensity;
+    result = pow(result, vec3(1.0/2.2));  // Correction gamma
     
-    // Tone mapping HDR amélioré
-    result = result / (result + vec3(1.0));
-    result = pow(result, vec3(1.0/2.2)); // Correction gamma
-    
-    FragColor = vec4(result, 1.0);
+    FragColor = vec4(result, texColor.a);
 }
