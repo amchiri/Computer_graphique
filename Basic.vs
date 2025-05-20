@@ -10,12 +10,16 @@ uniform mat4 u_projection;
 
 out vec3 v_normal;
 out vec2 v_uv;
-out vec3 v_fragPos;
+out vec3 v_position;
 
 void main() {
-    v_normal = mat3(transpose(inverse(u_transform))) * a_normal;
-    v_uv = a_uv;
+    // Position en espace monde
     vec4 worldPos = u_transform * vec4(a_position, 1.0);
-    v_fragPos = worldPos.xyz;
+    v_position = worldPos.xyz;
+    
+    // Normal en espace monde
+    v_normal = normalize(mat3(u_transform) * a_normal);
+    v_uv = a_uv;
+    
     gl_Position = u_projection * u_view * worldPos;
 }

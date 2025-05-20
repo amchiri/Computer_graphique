@@ -11,33 +11,7 @@
 #include "GLShader.h"
 #include "MatrixUtils.h"
 #include "dragonData.h"
-
-struct Vertex {
-	float position[3]; // x, y, z
-	float normal[3]; // nx, ny, ny
-	float uv[2]; // u, v
-
-	// Constructeur avec valeurs individuelles
-    Vertex(float px, float py, float pz,
-		float nx, float ny, float nz,
-		float u, float v) {
-	 position[0] = px; position[1] = py; position[2] = pz;
-	 normal[0] = nx; normal[1] = ny; normal[2] = nz;
-	 uv[0] = u; uv[1] = v;
-	}
-
-	// Constructeur avec tableaux
-	Vertex(const float pos[3], const float norm[3], const float tex[2]) {
-		for (int i = 0; i < 3; ++i) {
-			position[i] = pos[i];
-			normal[i] = norm[i];
-		}
-		for (int i = 0; i < 2; ++i) {
-			uv[i] = tex[i];
-		}
-	}
-
-};
+#include "Mesh.h"
 
 // VBO : buffer les valeurs des paramètres des vertexes
 // IBO : buffer les vertexes pour ne pas redéssiner plusieurs fois les mêmes
@@ -161,6 +135,9 @@ void processInput(GLFWwindow *window) {
     }
 }
 
+std::vector<Mesh*> sceneObjects;
+Mesh* sun;
+
 bool Initialise()
 {
 	g_BasicShader.LoadVertexShader("Basic.vs");
@@ -223,8 +200,25 @@ bool Initialise()
 	glVertexAttribPointer(loc_uv, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 	glEnableVertexAttribArray(loc_uv);
 
-// cette fonction est spécifique à Windows et permet d'activer (1) ou non (0)
-// la synchronization vertical. Elle necessite l'include wglew.h
+	// Création du soleil
+	sun = new Mesh();
+	sun->createSphere(1.0f, 32, 32);
+	sun->setScale(5.0f, 5.0f, 5.0f);  // Soleil plus grand
+	sun->setPosition(0.0f, 20.0f, -30.0f);  // Position ajustée pour être visible
+
+	// Définir le matériau du soleil pour qu'il soit émissif
+	Material sunMaterial;
+	sunMaterial.diffuse[0] = 5.0f;    // Couleurs plus intenses
+	sunMaterial.diffuse[1] = 4.0f;    // pour l'effet émissif
+	sunMaterial.diffuse[2] = 0.0f;
+	sunMaterial.specular[0] = 0.0f;   // Pas de spéculaire pour le soleil
+	sunMaterial.specular[1] = 0.0f;
+	sunMaterial.specular[2] = 0.0f;
+	sunMaterial.shininess = 0.0f;
+	sunMaterial.isEmissive = true;
+	sun->setMaterial(sunMaterial);
+	
+	sceneObjects.push_back(sun);
 
 	return true;
 }
@@ -234,6 +228,12 @@ void Terminate()
 	glDeleteBuffers(1, &VBO);
 	glDeleteBuffers(1, &IBO);
 	glDeleteVertexArrays(1, &VAO);
+
+	// Nettoyer les objets de la scène
+	for(Mesh* obj : sceneObjects) {
+		delete obj;
+	}
+	sceneObjects.clear();
 }
 
 void Render()
@@ -279,10 +279,15 @@ void Render()
 	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
 	glUniformMatrix4fv(loc_view, 1, GL_FALSE, view);
 
-	//conf lumière
-	float lightDir[3] = {0.0f, -0.75f, 1.0f};
-    float lightDiffuse[3] = {1.0f, 1.0f, 1.0f};
-    float lightSpecular[3] = {1.0f, 0.0f, 0.0f};
+	// Configuration de la lumière
+	const float* sunPos = sun->getPosition();
+	float lightDir[3] = {
+		sunPos[0],  // Utiliser la position réelle du soleil
+		sunPos[1],
+		sunPos[2]
+	};
+	float lightDiffuse[3] = {5.0f, 5.0f, 5.0f}; // Lumière encore plus intense
+	float lightSpecular[3] = {1.0f, 1.0f, 1.0f};
     
     GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
     GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
@@ -306,16 +311,23 @@ void Render()
     glUniform1f(loc_matShininess, matShininess);
 
 	//camera position
-	float viewPos[3] = {0.0f, 0.0f, 0.0f};
 	GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
-	glUniform3fv(loc_viewPos, 1, viewPos);
+	glUniform3fv(loc_viewPos, 1, camera.position); // Utiliser la vraie position de la caméra
 
+	// Ajout pour les objets normaux
+	GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
+	glUniform1i(loc_isEmissive, 0);  // Pour les objets normaux
 
 	// Récupération du buffer VAO
 	glBindVertexArray(VAO);
 
 	// dessin
 	glDrawElements(GL_TRIANGLES,  _countof(DragonIndices), GL_UNSIGNED_SHORT, 0);
+
+	// Dessiner tous les objets de la scène
+	for(Mesh* obj : sceneObjects) {
+		obj->draw(g_BasicShader);
+	}
 }
 
 int main()
