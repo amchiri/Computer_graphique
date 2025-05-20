@@ -208,10 +208,10 @@ bool Initialise()
 
 	// Définir le matériau du soleil pour qu'il soit émissif
 	Material sunMaterial;
-	sunMaterial.diffuse[0] = 5.0f;    // Couleurs plus intenses
-	sunMaterial.diffuse[1] = 4.0f;    // pour l'effet émissif
-	sunMaterial.diffuse[2] = 0.0f;
-	sunMaterial.specular[0] = 0.0f;   // Pas de spéculaire pour le soleil
+	sunMaterial.diffuse[0] = 10.0f;    // Jaune plus intense
+	sunMaterial.diffuse[1] = 8.0f;     
+	sunMaterial.diffuse[2] = 3.0f;     // Ajout d'un peu de rouge pour un effet plus chaud
+	sunMaterial.specular[0] = 0.0f;    
 	sunMaterial.specular[1] = 0.0f;
 	sunMaterial.specular[2] = 0.0f;
 	sunMaterial.shininess = 0.0f;
@@ -293,12 +293,12 @@ void Render()
 	// Configuration de la lumière
 	const float* sunPos = sun->getPosition();
 	float lightDir[3] = {
-		sunPos[0],  // Utiliser la position réelle du soleil
+		sunPos[0],
 		sunPos[1],
 		sunPos[2]
 	};
-	float lightDiffuse[3] = {5.0f, 5.0f, 5.0f}; // Lumière encore plus intense
-	float lightSpecular[3] = {1.0f, 1.0f, 1.0f};
+	float lightDiffuse[3] = {8.0f, 7.5f, 7.0f}; // Lumière plus chaude
+	float lightSpecular[3] = {2.0f, 2.0f, 1.8f}; // Reflets plus intenses
     
     GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
     GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
