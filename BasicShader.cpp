@@ -19,6 +19,7 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
 #include "imgui/imgui_impl_glfw.h"
+#include "Mat4.h"
 
 // VBO : buffer les valeurs des paramètres des vertexes
 // IBO : buffer les vertexes pour ne pas redéssiner plusieurs fois les mêmes
@@ -28,6 +29,11 @@ GLuint textureID;
 GLShader g_BasicShader;
 GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
 int width = 1200, height = 900; // taille de la fenêtre
+
+// Skybox variables
+GLuint skyboxVAO, skyboxVBO;
+GLuint skyboxTexture;
+GLShader g_SkyboxShader;
 
 // matrice de scale *2
 float scale[16] = {
@@ -84,6 +90,23 @@ bool cursor_locked = true;
 char obj_path[256] = "models/dragon.obj";
 float elapsed_time = 0.0f;
 float last_frame_time = 0.0f;
+
+// Structure pour les planètes
+struct Planet {
+    Mesh* mesh;
+    float orbitRadius;
+    float rotationSpeed;
+    float selfRotation;
+    float size;
+    GLuint texture;
+};
+
+std::vector<Planet> planets;
+
+// Déclarations des prototypes de fonctions
+void createPlanets();
+void loadPlanetTextures();
+void updatePlanets();
 
 // Fonction de callback pour la souris
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -171,6 +194,37 @@ void processInput(GLFWwindow *window) {
 
 std::vector<Mesh*> sceneObjects;
 Mesh* sun;
+
+void loadPlanetTextures() {
+    const char* texturePaths[] = {
+        "mercury.png",
+        "venus.png",
+        "earth.png",
+        "mars.png",
+        "jupiter.png",
+        "saturn.png",
+        "uranus.png"
+    };
+
+    for(size_t i = 0; i < planets.size(); i++) {
+        int texWidth, texHeight, texChannels;
+        unsigned char* data = stbi_load(texturePaths[i], &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        
+        if (data) {
+            glGenTextures(1, &planets[i].texture);
+            glBindTexture(GL_TEXTURE_2D, planets[i].texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+            stbi_image_free(data);
+        } else {
+            std::cerr << "Failed to load texture: " << texturePaths[i] << std::endl;
+        }
+    }
+}
 
 bool Initialise()
 {
@@ -298,6 +352,10 @@ bool Initialise()
 	// dragon->setPosition(0.0f, 0.0f, 0.0f);
 	// sceneObjects.push_back(dragon);
 
+	// Création des planètes
+	createPlanets();
+	loadPlanetTextures();
+
 	// Configuration d'ImGui avec une plus grande taille de police
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -325,8 +383,156 @@ bool Initialise()
 	ImGui_ImplGlfw_InitForOpenGL(g_Window, true);
 	ImGui_ImplOpenGL3_Init("#version 130");
 
+	// Création du skybox
+	float skyboxVertices[] = {
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+
+		-1.0f,  1.0f, -1.0f,
+		 1.0f,  1.0f, -1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f, -1.0f,
+
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		 1.0f, -1.0f,  1.0f
+	};
+
+	glGenVertexArrays(1, &skyboxVAO);
+	glGenBuffers(1, &skyboxVBO);
+	glBindVertexArray(skyboxVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+	// Charger la texture de l'espace
+	int spaceTexWidth, spaceTexHeight, spaceTexChannels;
+	unsigned char* spaceData = stbi_load("space.png", &spaceTexWidth, &spaceTexHeight, &spaceTexChannels, STBI_rgb_alpha);
+	if (spaceData) {
+		glGenTextures(1, &skyboxTexture);
+		glBindTexture(GL_TEXTURE_2D, skyboxTexture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, spaceTexWidth, spaceTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, spaceData);
+		glGenerateMipmap(GL_TEXTURE_2D);
+		stbi_image_free(spaceData);
+	}
+
+	// Charger les shaders du skybox
+	g_SkyboxShader.LoadVertexShader("Skybox.vs");
+	g_SkyboxShader.LoadFragmentShader("Skybox.fs");
+	g_SkyboxShader.Create();
+
 	return true;
 }
+
+void createPlanets() {
+    // Paramètres des planètes: rayon orbital, vitesse orbitale, taille
+    float planetData[][4] = {
+        {20.0f, 0.47f, 0.38f},  // Mercure
+        {30.0f, 0.35f, 0.95f},  // Vénus
+        {40.0f, 0.30f, 1.0f},   // Terre
+        {50.0f, 0.24f, 0.53f},  // Mars
+        {70.0f, 0.13f, 11.2f},  // Jupiter
+        {90.0f, 0.10f, 9.5f},   // Saturne
+        {110.0f, 0.07f, 4.0f},  // Uranus
+    };
+
+    // Création des planètes
+    for(int i = 0; i < 7; i++) {
+        Planet planet;
+        planet.mesh = new Mesh();
+        planet.mesh->createSphere(1.0f, 32, 32);
+        planet.mesh->setScale(planetData[i][2], planetData[i][2], planetData[i][2]);
+        planet.orbitRadius = planetData[i][0];
+        planet.rotationSpeed = planetData[i][1];
+        planet.selfRotation = 0.0f;
+        planet.size = planetData[i][2];
+        
+        // Les textures seront chargées séparément
+        planet.texture = 0;
+        planets.push_back(planet);
+        sceneObjects.push_back(planet.mesh);
+    }
+}
+
+void updatePlanets() {
+    float time = glfwGetTime();
+    const float* sunPos = sun->getPosition();
+    Mat4 baseTransform = Mat4::identity();
+    
+    for(size_t i = 0; i < planets.size(); i++) {
+        Planet& planet = planets[i];
+        
+        // Calcul de la position orbitale avec stabilisation
+        float angle = time * planet.rotationSpeed;
+        float x = cos(angle) * planet.orbitRadius;
+        float z = sin(angle) * planet.orbitRadius;
+        
+        // Créer une matrice de translation pour la position orbitale
+        Mat4 orbitalTransform = Mat4::translate(x, 0.0f, z);
+        
+        // Rotation sur elle-même avec Mat4
+        planet.selfRotation += elapsed_time * 0.5f;
+        Mat4 rotationMatrix = Mat4::rotate(planet.selfRotation, 0.0f, 1.0f, 0.0f);
+        
+        // Appliquer la transformation finale
+        Mat4 finalTransform = orbitalTransform * rotationMatrix;
+        planet.mesh->setTransform(finalTransform);
+        
+        // Mettre à jour la position pour le système d'éclairage
+        const float* pos = planet.mesh->getPosition();
+        float lightDir[3] = {
+            sunPos[0] - pos[0],
+            sunPos[1] - pos[1],
+            sunPos[2] - pos[2]
+        };
+        // Normaliser le vecteur de direction de la lumière
+        float len = sqrt(lightDir[0]*lightDir[0] + lightDir[1]*lightDir[1] + lightDir[2]*lightDir[2]);
+        lightDir[0] /= len;
+        lightDir[1] /= len;
+        lightDir[2] /= len;
+        
+        // Définir le matériau en fonction de la distance au soleil
+        Material mat;
+        float distToSun = sqrt((pos[0]-sunPos[0])*(pos[0]-sunPos[0]) + 
+                             (pos[1]-sunPos[1])*(pos[1]-sunPos[1]) + 
+                             (pos[2]-sunPos[2])*(pos[2]-sunPos[2]));
+        float lightIntensity = 1.0f / (1.0f + 0.01f * distToSun);
+        mat.diffuse[0] = mat.diffuse[1] = mat.diffuse[2] = lightIntensity;
+        planet.mesh->setMaterial(mat);
+    }
+}
+
 void Terminate()
 {
 	g_BasicShader.Destroy();
@@ -344,6 +550,18 @@ void Terminate()
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+
+	// Cleanup Skybox
+	glDeleteVertexArrays(1, &skyboxVAO);
+	glDeleteBuffers(1, &skyboxVBO);
+	glDeleteTextures(1, &skyboxTexture);
+
+	// Nettoyer les planètes
+	for(Planet& planet : planets) {
+		if(planet.texture != 0) {
+			glDeleteTextures(1, &planet.texture);
+		}
+	}
 }
 
 void Render()
@@ -402,66 +620,90 @@ void Render()
 	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
 	glUniformMatrix4fv(loc_view, 1, GL_FALSE, view);
 
-	// Mise à jour de la position de la lumière
+	// Rendre le skybox en premier
+	glDepthFunc(GL_LEQUAL);
+	glUseProgram(g_SkyboxShader.GetProgram());
+
+	// Enlever la translation de la matrice de vue pour le skybox
+	float skyboxView[16];
+	memcpy(skyboxView, view, sizeof(float) * 16);
+	skyboxView[12] = 0.0f;
+	skyboxView[13] = 0.0f;
+	skyboxView[14] = 0.0f;
+
+	GLint skyboxViewLoc = glGetUniformLocation(g_SkyboxShader.GetProgram(), "u_view");
+	GLint skyboxProjLoc = glGetUniformLocation(g_SkyboxShader.GetProgram(), "u_projection");
+	glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, skyboxView);
+	glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, projection);
+
+	glBindVertexArray(skyboxVAO);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, skyboxTexture);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+	glDepthFunc(GL_LESS);
+
+	// Mise à jour de la position de la lumière et configuration
 	const float* sunPos = sun->getPosition();
-	float lightDir[3] = {
-		sunPos[0],  // Position absolue du soleil
-		sunPos[1],
-		sunPos[2]
-	};
-	
-	// Mise à jour des paramètres de la lumière
-	float lightDiffuse[3] = {
-		light_color[0] * light_intensity,
-		light_color[1] * light_intensity,
-		light_color[2] * light_intensity
-	};
-	
-	float lightSpecular[3] = {
-		light_color[0] * light_intensity,
-		light_color[1] * light_intensity,
-		light_color[2] * light_intensity
-	};
+    
+    // Configuration de la lumière - correction de l'appel glUniform3f
+    GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
+    // Passer les composantes individuellement au lieu du pointeur
+    glUniform3f(loc_lightDir, 
+                (float)sunPos[0], 
+                (float)sunPos[1], 
+                (float)sunPos[2]);
 
-	// Passer la position du soleil directement au shader
-	GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
-	glUniform3fv(loc_lightDir, 1, lightDir);  // Utiliser directement la position du soleil
+    // Calculer les couleurs de la lumière
+    float lightDiffuse[3] = {
+        light_color[0] * light_intensity,
+        light_color[1] * light_intensity,
+        light_color[2] * light_intensity
+    };
+    
+    float lightSpecular[3] = {
+        light_color[0] * light_intensity,
+        light_color[1] * light_intensity,
+        light_color[2] * light_intensity
+    };
 
-	// Configuration de la lumière
-	GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
-	GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
-	GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
-	
-	glUniform1f(loc_intensity, light_intensity);
-	glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-	glUniform3fv(loc_lightSpecular, 1, lightSpecular);
+    // Configuration des paramètres de la lumière
+    GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
+    GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
+    GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
+    
+    glUniform1f(loc_intensity, light_intensity);
+    glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+    glUniform3fv(loc_lightSpecular, 1, lightSpecular);
 
-	// Configuration du matériau
-	float matDiffuse[3] = {0.8f, 0.8f, 0.8f};	
-	float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-	float matShininess = 20.0f;
-	
-	GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
-	GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
-	GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
-	
-	glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-	glUniform3fv(loc_matSpecular, 1, matSpecular);
-	glUniform1f(loc_matShininess, matShininess);
+    // Configuration du matériau
+    float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
+    float matSpecular[3] = {1.0f, 1.0f, 1.0f};
+    float matShininess = 20.0f;
+    
+    GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
+    GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
+    GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
+    
+    glUniform3fv(loc_matDiffuse, 1, matDiffuse);
+    glUniform3fv(loc_matSpecular, 1, matSpecular);
+    glUniform1f(loc_matShininess, matShininess);
 
-	//camera position
-	GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
-	glUniform3fv(loc_viewPos, 1, camera.position); // Utiliser la vraie position de la caméra
+    // Position de la caméra
+    GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
+    glUniform3fv(loc_viewPos, 1, camera.position);
 
-	// Ajout pour les objets normaux
-	GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
-	glUniform1i(loc_isEmissive, 0);  // Pour les objets normaux
+    // Gestion des objets émissifs
+    GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
+    glUniform1i(loc_isEmissive, 0);
 
 	// Récupération du buffer VAO
 	glBindVertexArray(VAO);
 
 	// dessin
 	glDrawElements(GL_TRIANGLES,  _countof(DragonIndices), GL_UNSIGNED_SHORT, 0);
+
+	// Mise à jour des planètes
+	updatePlanets();
 
 	// Dessiner tous les objets de la scène
 	for(Mesh* obj : sceneObjects) {
@@ -482,7 +724,7 @@ void Render()
 			camera.position[0], camera.position[1], camera.position[2]);
 		ImGui::Text("Camera Direction: (%.1f, %.1f, %.1f)", 
 			camera.front[0], camera.front[1], camera.front[2]);
-		
+
 		if (ImGui::Checkbox("Wireframe Mode", &wireframe_mode)) {
 			glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
 		}
@@ -491,18 +733,13 @@ void Render()
 		if (ImGui::CollapsingHeader("Light Settings")) {
 			ImGui::ColorEdit3("Light Color", light_color);
 			ImGui::SliderFloat("Light Intensity", &light_intensity, 0.0f, 10.0f);
-			
+
 			// Création d'une variable temporaire pour la position
 			float lightPos[3];
 			memcpy(lightPos, sun->getPosition(), 3 * sizeof(float));
-			
-			// Utilisation de la variable temporaire
 			if (ImGui::SliderFloat3("Light Position", lightPos, -50.0f, 50.0f)) {
 				sun->setPosition(lightPos[0], lightPos[1], lightPos[2]);
 			}
-			
-			ImGui::ColorEdit3("Ambient Color", matDiffuse);
-			ImGui::SliderFloat("Shininess", &matShininess, 1.0f, 256.0f);
 		}
 
 		// Chargement de modèles OBJ
@@ -542,16 +779,13 @@ void Render()
 		if (ImGui::CollapsingHeader("Texture Debug")) {
 			ImGui::Text("Texture ID: %d", textureID);
 			ImGui::Text("Texture Binding: %d", boundTexture);
-			
-			// Contrôles d'éclairage simplifiés
-			static float ambientStrength = 0.3f;
-			if (ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f)) {
-				GLint loc_ambient = glGetUniformLocation(basicProgram, "u_ambient_strength");
-				glUniform1f(loc_ambient, ambientStrength);
-			}
-			
-			// Afficher les coordonnées UV du centre
-			ImGui::Text("UV Test: %.2f, %.2f", 0.5f, 0.5f);
+		}
+
+		// Contrôles d'éclairage simplifiés
+		static float ambientStrength = 0.3f;
+		if (ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f)) {
+			GLint loc_ambient = glGetUniformLocation(basicProgram, "u_ambient_strength");
+			glUniform1f(loc_ambient, ambientStrength);
 		}
 
 		ImGui::End();
@@ -599,6 +833,5 @@ int main()
     Terminate();
     glfwDestroyWindow(g_Window);
     glfwTerminate();
-
     return 0;
 }

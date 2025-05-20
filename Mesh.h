@@ -5,7 +5,8 @@
 #include <string>
 #include <GL/glew.h>
 #include "GLShader.h"
-#include "tiny_obj_loader.h"  // Ajout de l'include
+#include "Mat4.h"
+#include "tiny_obj_loader.h"
 
 struct Vertex {
     float position[3];
@@ -18,7 +19,7 @@ struct Material {
     float specular[3] = {1.0f, 1.0f, 1.0f};
     float shininess = 32.0f;
     GLuint diffuseMap = 0;
-    bool isEmissive = false;  // Ajout de la propriété isEmissive
+    bool isEmissive = false;
 };
 
 class Mesh {
@@ -27,15 +28,18 @@ public:
     ~Mesh();
     
     void setPosition(float x, float y, float z);
-    void setRotation(float x, float y, float z);
+    void setRotation(const Mat4& rotationMatrix); // Nouveau
+    void setRotation(float x, float y, float z); // Garde l'ancien pour compatibilité
     void setScale(float x, float y, float z);
     void setMaterial(const Material& mat);
-    void createSphere(float radius, int sectors, int stacks);  // Ajout de cette méthode
+    void createSphere(float radius, int sectors, int stacks);
     const float* getPosition() const;
+    void setTransform(const Mat4& transform);
+    const Mat4& getTransform() const;
     
     bool loadFromFile(const char* filename);
     bool loadTexture(const char* filename);
-    bool loadFromOBJFile(const char* filename);  // Nouvelle méthode
+    bool loadFromOBJFile(const char* filename);
     void draw(GLShader& shader);
 
 private:
@@ -45,8 +49,9 @@ private:
     
     GLuint VAO, VBO, EBO;
     float position[3] = {0.0f, 0.0f, 0.0f};
-    float rotation[3] = {0.0f, 0.0f, 0.0f};
+    Mat4 rotation; // Changement ici
     float scale[3] = {1.0f, 1.0f, 1.0f};
+    Mat4 m_transform;  // Nouvelle matrice de transformation complète
     
     void setupMesh();
     void calculateModelMatrix(float* outMatrix);

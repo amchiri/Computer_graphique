@@ -7,14 +7,14 @@ private:
     std::array<float, 16> m_data;  // Column-major order
 
 public:
-    Mat4() { identity(); }
+    Mat4();
     
     // Constructeurs
     explicit Mat4(const float* data);
     Mat4(const Mat4& other);
 
     // Opérations basiques
-    void identity();
+    static Mat4 identity();  // Changé en méthode statique
     Mat4& operator=(const Mat4& other);
     Mat4 operator*(const Mat4& other) const;
     

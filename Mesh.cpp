@@ -7,7 +7,8 @@
 
 Mesh::Mesh() : VAO(0), VBO(0), EBO(0) {
     position[0] = position[1] = position[2] = 0.0f;
-    rotation[0] = rotation[1] = rotation[2] = 0.0f;
+    rotation = Mat4::identity();
+    m_transform = Mat4::identity(); // Initialisation de m_transform
     scale[0] = scale[1] = scale[2] = 1.0f;
 }
 
@@ -97,10 +98,15 @@ void Mesh::setPosition(float x, float y, float z) {
     position[2] = z;
 }
 
+void Mesh::setRotation(const Mat4& rotationMatrix) {
+    rotation = rotationMatrix;
+}
+
 void Mesh::setRotation(float x, float y, float z) {
-    rotation[0] = x;
-    rotation[1] = y;
-    rotation[2] = z;
+    Mat4 rotX = Mat4::rotate(x, 1.0f, 0.0f, 0.0f);
+    Mat4 rotY = Mat4::rotate(y, 0.0f, 1.0f, 0.0f);
+    Mat4 rotZ = Mat4::rotate(z, 0.0f, 0.0f, 1.0f);
+    rotation = rotX * rotY * rotZ;
 }
 
 void Mesh::setScale(float x, float y, float z) {
@@ -117,57 +123,17 @@ const float* Mesh::getPosition() const {
     return position;
 }
 
+void Mesh::setTransform(const Mat4& transform) {
+    m_transform = transform;
+}
+
+const Mat4& Mesh::getTransform() const {
+    return m_transform;
+}
+
 void Mesh::calculateModelMatrix(float* outMatrix) {
-    // Créer les matrices de translation, rotation et échelle
-    float translationMatrix[16] = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        position[0], position[1], position[2], 1.0f
-    };
-
-    float cosX = static_cast<float>(cos(rotation[0]));
-    float sinX = static_cast<float>(sin(rotation[0]));
-    float rotationMatrixX[16] = {
-        1.0f, 0.0f,  0.0f, 0.0f,
-        0.0f, cosX, -sinX, 0.0f,
-        0.0f, sinX,  cosX, 0.0f,
-        0.0f, 0.0f,  0.0f, 1.0f
-    };
-
-    float cosY = static_cast<float>(cos(rotation[1]));
-    float sinY = static_cast<float>(sin(rotation[1]));
-    float rotationMatrixY[16] = {
-        cosY, 0.0f, sinY, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        -sinY, 0.0f, cosY, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
-
-    float cosZ = static_cast<float>(cos(rotation[2]));
-    float sinZ = static_cast<float>(sin(rotation[2]));
-    float rotationMatrixZ[16] = {
-        cosZ, -sinZ, 0.0f, 0.0f,
-        sinZ,  cosZ, 0.0f, 0.0f,
-        0.0f,  0.0f, 1.0f, 0.0f,
-        0.0f,  0.0f, 0.0f, 1.0f
-    };
-
-    float scaleMatrix[16] = {
-        scale[0], 0.0f, 0.0f, 0.0f,
-        0.0f, scale[1], 0.0f, 0.0f,
-        0.0f, 0.0f, scale[2], 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
-
-    // Combiner les matrices
-    float temp[16];
-    multiplyMatrix4x4(rotationMatrixX, scaleMatrix, temp);
-    float temp2[16];
-    multiplyMatrix4x4(rotationMatrixY, temp, temp2);
-    float temp3[16];
-    multiplyMatrix4x4(rotationMatrixZ, temp2, temp3);
-    multiplyMatrix4x4(translationMatrix, temp3, outMatrix);
+    // Utiliser directement la matrice de transformation
+    memcpy(outMatrix, m_transform.data(), 16 * sizeof(float));
 }
 
 void Mesh::createSphere(float radius, int sectors, int stacks) {
