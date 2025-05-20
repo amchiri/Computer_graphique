@@ -5,6 +5,7 @@
 #include <string>
 #include <GL/glew.h>
 #include "GLShader.h"
+#include "tiny_obj_loader.h"  // Ajout de l'include
 
 struct Vertex {
     float position[3];
@@ -34,6 +35,7 @@ public:
     
     bool loadFromFile(const char* filename);
     bool loadTexture(const char* filename);
+    bool loadFromOBJFile(const char* filename);  // Nouvelle méthode
     void draw(GLShader& shader);
 
 private:

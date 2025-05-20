@@ -27,37 +27,46 @@ out vec4 FragColor;
 
 void main() {
     if (u_material.isEmissive) {
-        // Pour les objets émissifs, utiliser la couleur diffuse directement
-        FragColor = vec4(u_material.diffuseColor, 1.0);
+        // Effet de halo pour le soleil avec une couleur plus vive
+        FragColor = vec4(u_material.diffuseColor * 2.0, 1.0);
         return;
     }
     
     // Calculs d'éclairage normaux pour les objets non-émissifs
     vec3 norm = normalize(v_normal);
     
-    // La direction de la lumière doit être calculée du point vers le soleil
-    vec3 lightDir = normalize(u_light.direction - v_position);
+    // Vecteur du point vers le soleil
+    vec3 lightVec = u_light.direction - v_position;
+    float lightDistance = length(lightVec);
+    vec3 lightDir = lightVec / lightDistance;
     vec3 viewDir = normalize(u_viewPos - v_position);
     
-    // Diffuse avec atténuation par la distance
-    float dist = length(u_light.direction - v_position);
-    float attenuation = 1.0 / (1.0 + 0.09 * dist + 0.032 * dist * dist);
+    // Atténuation quadratique améliorée
+    float constant = 1.0;
+    float linear = 0.014;
+    float quadratic = 0.0007;
+    float attenuation = 1.0 / (constant + linear * lightDistance + quadratic * lightDistance * lightDistance);
     
+    // Composante diffuse avec intensité ajustée
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = u_light.diffuseColor * u_material.diffuseColor * diff * attenuation;
+    vec3 diffuse = u_light.diffuseColor * u_material.diffuseColor * diff * attenuation * 2.0;
     
-    // Specular
-    vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_material.shininess);
+    // Spéculaire avec effet Blinn-Phong
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(norm, halfwayDir), 0.0), u_material.shininess * 2.0);
     vec3 specular = u_light.specularColor * u_material.specularColor * spec * attenuation;
     
-    // Ambient
-    vec3 ambient = vec3(0.1) * u_material.diffuseColor;
+    // Ambiant avec intensité ajustée selon la distance
+    float ambientStrength = 0.15 * (1.0 - min(lightDistance/50.0, 0.5));
+    vec3 ambient = ambientStrength * u_material.diffuseColor;
     
-    // Texture
+    // Texture et combinaison finale
     vec4 texColor = texture(u_texture, v_uv);
-    
-    // Combinaison finale
     vec3 result = (ambient + diffuse + specular) * texColor.rgb;
+    
+    // Tone mapping simple pour meilleure exposition
+    result = result / (result + vec3(1.0));
+    result = pow(result, vec3(1.0/2.2));  // Correction gamma
+    
     FragColor = vec4(result, texColor.a);
 }

@@ -220,6 +220,17 @@ bool Initialise()
 	
 	sceneObjects.push_back(sun);
 
+	// Remplacer la création manuelle du dragon par le chargement du fichier OBJ
+	// Mesh* dragon = new Mesh();
+	// if (!dragon->loadFromOBJFile("models/dragon.obj")) {
+	// 	std::cerr << "Erreur : impossible de charger le modèle dragon.obj\n";
+	// 	delete dragon;
+	// 	return false;
+	// }
+	// dragon->setScale(0.5f, 0.5f, 0.5f);
+	// dragon->setPosition(0.0f, 0.0f, 0.0f);
+	// sceneObjects.push_back(dragon);
+
 	return true;
 }
 void Terminate()

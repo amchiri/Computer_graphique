@@ -1,6 +1,7 @@
 #include "Mesh.h"
 #include "MatrixUtils.h"
 #include <stb/stb_image.h>
+#include "tiny_obj_loader.h"
 #include <iostream>
 #include <cmath>
 
@@ -230,4 +231,67 @@ void Mesh::createSphere(float radius, int sectors, int stacks) {
     }
 
     setupMesh();
+}
+
+bool Mesh::loadFromOBJFile(const char* filename) {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename);
+
+    if (!warn.empty()) {
+        std::cout << "Warning: " << warn << std::endl;
+    }
+
+    if (!err.empty()) {
+        std::cerr << "Error: " << err << std::endl;
+    }
+
+    if (!ret) {
+        return false;
+    }
+
+    // Clear existing data
+    vertices.clear();
+    indices.clear();
+
+    // Pour chaque shape dans le fichier
+    for (size_t s = 0; s < shapes.size(); s++) {
+        size_t index_offset = 0;
+        // Pour chaque face dans la shape
+        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+            // Pour chaque vertex dans la face
+            for (size_t v = 0; v < 3; v++) {
+                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                
+                Vertex vertex;
+                // Position
+                vertex.position[0] = attrib.vertices[3 * idx.vertex_index + 0];
+                vertex.position[1] = attrib.vertices[3 * idx.vertex_index + 1];
+                vertex.position[2] = attrib.vertices[3 * idx.vertex_index + 2];
+                
+                // Normal
+                if (idx.normal_index >= 0) {
+                    vertex.normal[0] = attrib.normals[3 * idx.normal_index + 0];
+                    vertex.normal[1] = attrib.normals[3 * idx.normal_index + 1];
+                    vertex.normal[2] = attrib.normals[3 * idx.normal_index + 2];
+                }
+                
+                // UV
+                if (idx.texcoord_index >= 0) {
+                    vertex.uv[0] = attrib.texcoords[2 * idx.texcoord_index + 0];
+                    vertex.uv[1] = attrib.texcoords[2 * idx.texcoord_index + 1];
+                }
+                
+                vertices.push_back(vertex);
+                indices.push_back(indices.size());
+            }
+            index_offset += 3;
+        }
+    }
+
+    setupMesh();
+    return true;
 }
