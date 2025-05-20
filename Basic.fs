@@ -23,50 +23,47 @@ uniform Material u_material;
 uniform sampler2D u_texture;
 uniform vec3 u_viewPos;
 
+// Ajouter ces uniformes
+uniform float u_time;
+uniform float u_intensity;
+
 out vec4 FragColor;
 
 void main() {
     if (u_material.isEmissive) {
-        // Effet de halo pour le soleil avec une couleur plus vive
         FragColor = vec4(u_material.diffuseColor * 2.0, 1.0);
         return;
     }
     
-    // Calculs d'éclairage normaux pour les objets non-émissifs
     vec3 norm = normalize(v_normal);
-    
-    // Vecteur du point vers le soleil
     vec3 lightVec = u_light.direction - v_position;
-    float lightDistance = length(lightVec);
-    vec3 lightDir = lightVec / lightDistance;
+    float dist = length(lightVec);
+    vec3 lightDir = normalize(lightVec);
     vec3 viewDir = normalize(u_viewPos - v_position);
     
-    // Atténuation quadratique améliorée
-    float constant = 1.0;
-    float linear = 0.014;
-    float quadratic = 0.0007;
-    float attenuation = 1.0 / (constant + linear * lightDistance + quadratic * lightDistance * lightDistance);
+    // Utiliser l'intensité de la lumière
+    vec3 adjustedLightColor = u_light.diffuseColor * u_intensity;
     
-    // Composante diffuse avec intensité ajustée
+    // Ambient avec la couleur de la lumière
+    vec3 ambient = vec3(0.1) * adjustedLightColor * texture(u_texture, v_uv).rgb;
+    
+    // Diffuse avec la couleur et l'intensité de la lumière
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = u_light.diffuseColor * u_material.diffuseColor * diff * attenuation * 2.0;
+    vec3 diffuse = adjustedLightColor * u_material.diffuseColor * diff * texture(u_texture, v_uv).rgb;
     
-    // Spéculaire avec effet Blinn-Phong
-    vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(norm, halfwayDir), 0.0), u_material.shininess * 2.0);
-    vec3 specular = u_light.specularColor * u_material.specularColor * spec * attenuation;
+    // Specular avec la couleur et l'intensité de la lumière
+    vec3 H = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(norm, H), 0.0), u_material.shininess);
+    vec3 specular = u_light.specularColor * u_material.specularColor * spec;
     
-    // Ambiant avec intensité ajustée selon la distance
-    float ambientStrength = 0.15 * (1.0 - min(lightDistance/50.0, 0.5));
-    vec3 ambient = ambientStrength * u_material.diffuseColor;
+    // Atténuation basée sur la distance
+    float attenuation = 1.0 / (1.0 + 0.045 * dist + 0.0075 * dist * dist);
     
-    // Texture et combinaison finale
-    vec4 texColor = texture(u_texture, v_uv);
-    vec3 result = (ambient + diffuse + specular) * texColor.rgb;
+    vec3 result = ambient + (diffuse + specular) * attenuation;
     
-    // Tone mapping simple pour meilleure exposition
+    // HDR tone mapping
     result = result / (result + vec3(1.0));
-    result = pow(result, vec3(1.0/2.2));  // Correction gamma
+    result = pow(result, vec3(1.0/2.2));  // gamma correction
     
-    FragColor = vec4(result, texColor.a);
+    FragColor = vec4(result, 1.0);
 }

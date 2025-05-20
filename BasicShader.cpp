@@ -8,10 +8,17 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <filesystem>
 #include "GLShader.h"
 #include "MatrixUtils.h"
 #include "dragonData.h"
 #include "Mesh.h"
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_opengl3.h"
+#include "imgui/imgui_impl_glfw.h"
 
 // VBO : buffer les valeurs des paramètres des vertexes
 // IBO : buffer les vertexes pour ne pas redéssiner plusieurs fois les mêmes
@@ -19,6 +26,7 @@
 GLuint VBO, IBO, VAO;
 GLuint textureID;
 GLShader g_BasicShader;
+GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
 int width = 1200, height = 900; // taille de la fenêtre
 
 // matrice de scale *2
@@ -62,6 +70,21 @@ float lastX = width / 2.0f;
 float lastY = height / 2.0f;
 bool firstMouse = true;
 
+// Variables globales pour ImGui
+bool show_demo_window = true;
+bool show_settings = true;
+float light_color[3] = { 1.0f, 1.0f, 1.0f };
+float light_intensity = 1.0f;
+
+// Variables globales supplémentaires
+float fps = 0.0f;
+bool wireframe_mode = false;
+bool show_debug_window = true;
+bool cursor_locked = true;
+char obj_path[256] = "models/dragon.obj";
+float elapsed_time = 0.0f;
+float last_frame_time = 0.0f;
+
 // Fonction de callback pour la souris
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (firstMouse) {
@@ -98,8 +121,19 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 
 // Fonction de gestion des entrées
 void processInput(GLFWwindow *window) {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    // Modifier la gestion de la touche Escape
+    if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
+        cursor_locked = !cursor_locked;
+        glfwSetInputMode(window, GLFW_CURSOR, 
+            cursor_locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        // Attendre un peu pour éviter le rebond
+        glfwWaitEvents();
+    }
+
+    // Ne traiter les inputs de caméra que si le curseur est verrouillé
+    if (!cursor_locked || ImGui::GetIO().WantCaptureMouse) {
+        return;
+    }
 
     float cameraSpeed = camera.speed;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
@@ -140,6 +174,25 @@ Mesh* sun;
 
 bool Initialise()
 {
+    // Déplacer la création de la fenêtre depuis main()
+    g_Window = glfwCreateWindow(width, height, "OpenGL Window", nullptr, nullptr);
+    if (!g_Window) {
+        std::cerr << "Erreur : Impossible de créer la fenêtre GLFW" << std::endl;
+        glfwTerminate();
+        return false;
+    }
+    glfwMakeContextCurrent(g_Window);
+
+    // Ajouter les callbacks pour la souris
+    glfwSetCursorPosCallback(g_Window, mouse_callback);
+    glfwSetInputMode(g_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    // Initialisation de GLEW
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Erreur : Impossible d'initialiser GLEW" << std::endl;
+        return false;
+    }
+
 	g_BasicShader.LoadVertexShader("Basic.vs");
 	g_BasicShader.LoadFragmentShader("Basic.fs");
 	g_BasicShader.Create();
@@ -150,13 +203,16 @@ bool Initialise()
 	unsigned char* data = stbi_load("dragon.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
 	if (data) {
+		std::cout << "Texture chargée avec succès : " << texWidth << "x" << texHeight 
+				  << " (" << texChannels << " canaux)" << std::endl;
+				  
 		glGenTextures(1, &textureID);
 		glBindTexture(GL_TEXTURE_2D, textureID);
 
 		// Configuration basique
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);	
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 		// Upload des données dans OpenGL
@@ -167,6 +223,8 @@ bool Initialise()
 		glBindTexture(GL_TEXTURE_2D, 0); // unbind proprement
 	} else {
 		std::cerr << "Erreur : impossible de charger la texture PNG\n";
+		std::cerr << "Erreur stbi : " << stbi_failure_reason() << std::endl;
+		std::cerr << "Chemin tenté : " << std::filesystem::absolute("dragon.png").string() << std::endl;
 	}
 
 	// création du VAO
@@ -204,7 +262,7 @@ bool Initialise()
 	sun = new Mesh();
 	sun->createSphere(1.0f, 32, 32);
 	sun->setScale(5.0f, 5.0f, 5.0f);  // Soleil plus grand
-	sun->setPosition(0.0f, 20.0f, -30.0f);  // Position ajustée pour être visible
+	sun->setPosition(0.0f, 10.0f, -15.0f);  // Position ajustée pour être visible
 
 	// Définir le matériau du soleil pour qu'il soit émissif
 	Material sunMaterial;
@@ -231,6 +289,14 @@ bool Initialise()
 	// dragon->setPosition(0.0f, 0.0f, 0.0f);
 	// sceneObjects.push_back(dragon);
 
+	// Initialisation d'ImGui
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	ImGui::StyleColorsDark();
+	ImGui_ImplGlfw_InitForOpenGL(g_Window, true);
+	ImGui_ImplOpenGL3_Init("#version 130");
+
 	return true;
 }
 void Terminate()
@@ -245,10 +311,21 @@ void Terminate()
 		delete obj;
 	}
 	sceneObjects.clear();
+
+	// Cleanup ImGui
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 }
 
 void Render()
 {
+	// Calcul du FPS
+	float current_time = glfwGetTime();
+	elapsed_time = current_time - last_frame_time;
+	last_frame_time = current_time;
+	fps = 1.0f / elapsed_time;
+
 	// paramétrage de la fenêtre
 	glViewport(0, 0, width, height);
 	glEnable(GL_DEPTH_TEST);
@@ -264,6 +341,13 @@ void Render()
 	glUniform1i(loc_texture, 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, textureID);
+
+	// Debug de la texture
+	GLint boundTexture;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
+	if (boundTexture != textureID) {
+		std::cout << "Warning: Texture non liée correctement" << std::endl;
+	}
 
 	// Combine matrices into one transformation matrix
 	float transform[16];
@@ -297,19 +381,29 @@ void Render()
 		sunPos[1],
 		sunPos[2]
 	};
-	float lightDiffuse[3] = {8.0f, 7.5f, 7.0f}; // Lumière plus chaude
-	float lightSpecular[3] = {2.0f, 2.0f, 1.8f}; // Reflets plus intenses
+	float lightDiffuse[3] = {
+		light_color[0] * light_intensity,
+		light_color[1] * light_intensity,
+		light_color[2] * light_intensity
+	};
+	float lightSpecular[3] = {
+		light_color[0] * light_intensity * 0.5f,
+		light_color[1] * light_intensity * 0.5f,
+		light_color[2] * light_intensity * 0.5f
+	};
     
     GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
     GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
     GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
+    GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
     
+    glUniform1f(loc_intensity, light_intensity);
     glUniform3fv(loc_lightDir, 1, lightDir);
     glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
     glUniform3fv(loc_lightSpecular, 1, lightSpecular);
 
     // Configuration du matériau
-    float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
+    float matDiffuse[3] = {0.8f, 0.8f, 0.8f};	
     float matSpecular[3] = {1.0f, 1.0f, 1.0f};
     float matShininess = 20.0f;
     
@@ -339,58 +433,136 @@ void Render()
 	for(Mesh* obj : sceneObjects) {
 		obj->draw(g_BasicShader);
 	}
+
+	// Début du rendu ImGui
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	// Fenêtre de debug
+	if (show_debug_window) {
+		ImGui::Begin("Debug", &show_debug_window);
+		ImGui::Text("FPS: %.1f", fps);
+		ImGui::Text("Camera Position: (%.1f, %.1f, %.1f)", 
+			camera.position[0], camera.position[1], camera.position[2]);
+		ImGui::Text("Camera Direction: (%.1f, %.1f, %.1f)", 
+			camera.front[0], camera.front[1], camera.front[2]);
+		
+		if (ImGui::Checkbox("Wireframe Mode", &wireframe_mode)) {
+			glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
+		}
+
+		// Contrôle des paramètres de lumière
+		if (ImGui::CollapsingHeader("Light Settings")) {
+			ImGui::ColorEdit3("Light Color", light_color);
+			ImGui::SliderFloat("Light Intensity", &light_intensity, 0.0f, 10.0f);
+			
+			// Création d'une variable temporaire pour la position
+			float lightPos[3];
+			memcpy(lightPos, sun->getPosition(), 3 * sizeof(float));
+			
+			// Utilisation de la variable temporaire
+			if (ImGui::SliderFloat3("Light Position", lightPos, -50.0f, 50.0f)) {
+				sun->setPosition(lightPos[0], lightPos[1], lightPos[2]);
+			}
+			
+			ImGui::ColorEdit3("Ambient Color", matDiffuse);
+			ImGui::SliderFloat("Shininess", &matShininess, 1.0f, 256.0f);
+		}
+
+		// Chargement de modèles OBJ
+		if (ImGui::CollapsingHeader("Model Loader")) {
+			ImGui::InputText("Model Path", obj_path, sizeof(obj_path));
+			if (ImGui::Button("Load Model")) {
+				Mesh* new_model = new Mesh();
+				if (new_model->loadFromOBJFile(obj_path)) {
+					new_model->setScale(0.5f, 0.5f, 0.5f);
+					sceneObjects.push_back(new_model);
+				} else {
+					delete new_model;
+					ImGui::OpenPopup("Error");
+				}
+			}
+			if (ImGui::BeginPopupModal("Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+				ImGui::Text("Failed to load model!");
+				if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+				ImGui::EndPopup();
+			}
+		}
+
+		// Liste des objets dans la scène
+		if (ImGui::CollapsingHeader("Scene Objects")) {
+			for (size_t i = 0; i < sceneObjects.size(); i++) {
+				char label[32];
+				sprintf(label, "Object %zu", i);
+				if (ImGui::TreeNode(label)) {
+					float* pos = (float*)sceneObjects[i]->getPosition();
+					ImGui::SliderFloat3("Position", pos, -50.0f, 50.0f);
+					ImGui::TreePop();
+				}
+			}
+		}
+
+		// Ajout de debug pour la texture dans l'interface ImGui
+		if (ImGui::CollapsingHeader("Texture Debug")) {
+			ImGui::Text("Texture ID: %d", textureID);
+			ImGui::Text("Texture Binding: %d", boundTexture);
+			
+			// Contrôles d'éclairage simplifiés
+			static float ambientStrength = 0.3f;
+			if (ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f)) {
+				GLint loc_ambient = glGetUniformLocation(basicProgram, "u_ambient_strength");
+				glUniform1f(loc_ambient, ambientStrength);
+			}
+			
+			// Afficher les coordonnées UV du centre
+			ImGui::Text("UV Test: %.2f, %.2f", 0.5f, 0.5f);
+		}
+
+		ImGui::End();
+	}
+
+	if (show_settings) {
+		ImGui::Begin("Light Settings", &show_settings);
+		ImGui::ColorEdit3("Light Color", light_color);
+		ImGui::SliderFloat("Light Intensity", &light_intensity, 0.0f, 10.0f);
+		ImGui::End();
+	}
+
+	ImGui::Render();
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 int main()
 {
-	// Initialisation de GLFW
-	if (!glfwInit())
-	{
-		std::cerr << "Erreur : Impossible d'initialiser GLFW" << std::endl;
-		return -1;
-	}
+    // Initialisation de GLFW
+    if (!glfwInit()) {
+        std::cerr << "Erreur : Impossible d'initialiser GLFW" << std::endl;
+        return -1;
+    }
 
-	// Cr�ation de la fenetre OpenGL
-	GLFWwindow *window = glfwCreateWindow(width, height, "OpenGL Window", nullptr, nullptr);
-	if (!window)
-	{
-		std::cerr << "Erreur : Impossible de cr�er la fen�tre GLFW" << std::endl;
-		glfwTerminate();
-		return -1;
-	}
-	glfwMakeContextCurrent(window);
+    // Initialisation du shader et de la fenêtre
+    if (!Initialise()) {
+        std::cerr << "Erreur : Impossible d'initialiser les shaders" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
 
-	// Ajouter les callbacks pour la souris
-	glfwSetCursorPosCallback(window, mouse_callback);
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    // Initialisation du temps
+    last_frame_time = glfwGetTime();
 
-	// Initialisation de GLEW
-	if (glewInit() != GLEW_OK)
-	{
-		std::cerr << "Erreur : Impossible d'initialiser GLEW" << std::endl;
-		return -1;
-	}
+    // Boucle de rendu
+    while (!glfwWindowShouldClose(g_Window)) {
+        processInput(g_Window);
+        Render();
+        glfwSwapBuffers(g_Window);
+        glfwPollEvents();
+    }
 
-	// Initialisation du shader
-	if (!Initialise())
-	{
-		std::cerr << "Erreur : Impossible d'initialiser les shaders" << std::endl;
-		return -1;
-	}
+    // Nettoyage
+    Terminate();
+    glfwDestroyWindow(g_Window);
+    glfwTerminate();
 
-	// Boucle de rendu
-	while (!glfwWindowShouldClose(window))
-	{
-		processInput(window);
-		Render();
-		glfwSwapBuffers(window);
-		glfwPollEvents();
-	}
-
-	// Nettoyage
-	Terminate();
-	glfwDestroyWindow(window);
-	glfwTerminate();
-
-	return 0;
+    return 0;
 }
