@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <string>
 #include <filesystem>
 #include "GLShader.h"
 #include "dragonData.h"
@@ -194,6 +195,17 @@ void processInput(GLFWwindow *window) {
 std::vector<Mesh*> sceneObjects;
 Mesh* sun;
 
+const char* tab[]={
+	"models/mercury.png",
+	"models/venus.png",
+	"models/earth.png",
+	"models/mars.png",
+	"models/jupiter.png",
+	"models/saturn.png",
+	"models/uranus.png",
+	"models/neptune.png"
+};
+
 void loadPlanetTextures() {
     for(size_t i = 0; i < planets.size(); i++) {
         Planet& planet = planets[i];
@@ -207,7 +219,7 @@ void loadPlanetTextures() {
             planet.mesh->setMaterial(planetMaterial);
             
             // Charger la texture
-            if (planet.mesh->loadTexture("earth.png")) {
+            if (planet.mesh->loadTexture(tab[i])) {
                 std::cout << "Texture earth.png chargée avec succès pour la planète " << i << std::endl;
                 planet.texture = planet.mesh->getMaterial().diffuseMap;
             } else {
@@ -316,16 +328,21 @@ bool Initialise()
 
 	// Définir le matériau du soleil pour qu'il soit émissif
 	Material sunMaterial;
-	sunMaterial.diffuse[0] = 10.0f;    // Jaune plus intense
-	sunMaterial.diffuse[1] = 8.0f;     
-	sunMaterial.diffuse[2] = 3.0f;     // Ajout d'un peu de rouge pour un effet plus chaud
+	sunMaterial.diffuse[0] = 1.0f;    // Blanc pour permettre à la texture d'apparaître
+	sunMaterial.diffuse[1] = 1.0f;     
+	sunMaterial.diffuse[2] = 1.0f;     
 	sunMaterial.specular[0] = 0.0f;    
 	sunMaterial.specular[1] = 0.0f;
 	sunMaterial.specular[2] = 0.0f;
 	sunMaterial.shininess = 0.0f;
 	sunMaterial.isEmissive = true;
 	sun->setMaterial(sunMaterial);
-	
+
+	// Charger la texture du soleil avant de l'ajouter aux objets de la scène
+	if (!sun->loadTexture("models/sun.png")) {
+		std::cerr << "Erreur : impossible de charger la texture du soleil" << std::endl;
+	}
+
 	sceneObjects.push_back(sun);
 
 	// Remplacer la création manuelle du dragon par le chargement du fichier OBJ
@@ -697,8 +714,8 @@ void Render()
             obj->setMaterial(sunMat);
             
             // S'assurer que le soleil n'utilise pas de texture
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, 0);
+            // glActiveTexture(GL_TEXTURE0);
+            // glBindTexture(GL_TEXTURE_2D, 0);
         }
         
         // Chaque objet va gérer sa propre texture dans sa méthode draw()

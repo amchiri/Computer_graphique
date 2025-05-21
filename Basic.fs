@@ -33,7 +33,8 @@ void main() {
     vec4 texColor = texture(u_texture, v_uv);
     
     if (u_material.isEmissive) {
-        FragColor = vec4(u_material.diffuseColor, 1.0);
+        // Multiplier la couleur émissive par la texture
+        FragColor = vec4(u_material.diffuseColor * texColor.rgb, 1.0);
         return;
     }
     
