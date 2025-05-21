@@ -19,6 +19,7 @@ pacman -S mingw-w64-x86_64-make
 pacman -S mingw-w64-x86_64-glew
 pacman -S mingw-w64-x86_64-glfw
 pacman -S mingw-w64-x86_64-cmake
+pacman -S mingw-w64-x86_64-stb
 ```
 
 ## Compilation
