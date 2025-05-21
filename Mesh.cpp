@@ -1,5 +1,5 @@
 #include "Mesh.h"
-#include "MatrixUtils.h"
+#include "Mat4.h"
 #include <stb/stb_image.h>
 #include "tiny_obj_loader.h"
 #include <iostream>
@@ -22,14 +22,31 @@ Mesh::~Mesh() {
 bool Mesh::loadTexture(const char* filename) {
     int width, height, channels;
     unsigned char* data = stbi_load(filename, &width, &height, &channels, 4);
-    if (!data) return false;
+    if (!data) {
+        std::cerr << "Erreur de chargement de la texture: " << filename << std::endl;
+        std::cerr << "Raison: " << stbi_failure_reason() << std::endl;
+        return false;
+    }
+
+    if (material.diffuseMap) {
+        glDeleteTextures(1, &material.diffuseMap);
+    }
 
     glGenTextures(1, &material.diffuseMap);
     glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
+    
+    // Configuration détaillée de la texture
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
     
     stbi_image_free(data);
+    glBindTexture(GL_TEXTURE_2D, 0);  // Unbind la texture
+    
     return true;
 }
 
@@ -72,9 +89,9 @@ void Mesh::draw(GLShader& shader) {
     glUniform3fv(loc_matSpecular, 1, material.specular);
     glUniform1f(loc_matShininess, material.shininess);
 
-    // Activer la texture si elle existe
+    // Activer la texture de ce mesh spécifique
+    glActiveTexture(GL_TEXTURE0);
     if (material.diffuseMap) {
-        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
         GLint loc_texture = glGetUniformLocation(program, "u_texture");
         glUniform1i(loc_texture, 0);
@@ -136,7 +153,6 @@ const Mat4& Mesh::getTransform() const {
 }
 
 void Mesh::calculateModelMatrix(float* outMatrix) {
-    // Utiliser directement la matrice de transformation
     memcpy(outMatrix, m_transform.data(), 16 * sizeof(float));
 }
 

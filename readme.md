@@ -73,4 +73,4 @@ Si vous rencontrez des erreurs :
 - Le fichier `space.png` est nécessaire pour la skybox
 
 
-g++ BasicShader.cpp GLShader.cpp MatrixUtils.cpp Mesh.cpp Mat4.cpp tiny_obj_loader.cpp imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_widgets.cpp imgui/imgui_tables.cpp imgui/imgui_impl_glfw.cpp imgui/imgui_impl_opengl3.cpp -I. -Iimgui -lglew32 -lglfw3 -lopengl32 -lglu32 -o BasicShader.exe
+g++ BasicShader.cpp GLShader.cpp Mesh.cpp Mat4.cpp tiny_obj_loader.cpp imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_widgets.cpp imgui/imgui_tables.cpp imgui/imgui_impl_glfw.cpp imgui/imgui_impl_opengl3.cpp -I. -Iimgui -lglew32 -lglfw3 -lopengl32 -lglu32 -o BasicShader.exe

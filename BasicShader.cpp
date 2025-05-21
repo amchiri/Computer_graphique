@@ -10,7 +10,6 @@
 #include <cmath>
 #include <filesystem>
 #include "GLShader.h"
-#include "MatrixUtils.h"
 #include "dragonData.h"
 #include "Mesh.h"
 #include "imgui.h"
@@ -196,30 +195,53 @@ std::vector<Mesh*> sceneObjects;
 Mesh* sun;
 
 void loadPlanetTextures() {
-    const char* texturePaths[] = {
-        "dragon.png",  // À remplacer par les vraies textures plus tard
-        "dragon.png",
-        "dragon.png",
-        "dragon.png",
-        "dragon.png",
-        "dragon.png",
-        "dragon.png"
-    };
-
     for(size_t i = 0; i < planets.size(); i++) {
         Planet& planet = planets[i];
         if (planet.mesh) {
-            // Charger et configurer la texture pour chaque planète
+            // Configuration du matériau
             Material planetMaterial;
-            planet.mesh->loadTexture(texturePaths[i]);  // Utiliser la méthode loadTexture de Mesh
-            
-            // Configuration du matériau de base
             planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
             planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
             planetMaterial.shininess = 32.0f;
             planetMaterial.isEmissive = false;
             
+            // S'assurer de libérer l'ancienne texture si elle existe
+            if (planet.texture != 0) {
+                glDeleteTextures(1, &planet.texture);
+            }
+            
+            // Charger earth.png avec stbi_load
+            int texWidth, texHeight, texChannels;
+            unsigned char* data = stbi_load("earth.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+            
+            if (data) {
+                GLuint textureID;
+                glGenTextures(1, &textureID);
+                glBindTexture(GL_TEXTURE_2D, textureID);
+                
+                // Configuration de la texture
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+                glGenerateMipmap(GL_TEXTURE_2D);
+                
+                stbi_image_free(data);
+                
+                // Assigner la texture
+                planetMaterial.diffuseMap = textureID;
+                planet.texture = textureID;
+                
+                std::cout << "Texture earth.png chargée avec succès pour la planète " << i << std::endl;
+            } else {
+                std::cerr << "Erreur : impossible de charger earth.png pour la planète " << i << std::endl;
+                std::cerr << "Raison : " << stbi_failure_reason() << std::endl;
+            }
+            
             planet.mesh->setMaterial(planetMaterial);
+            glBindTexture(GL_TEXTURE_2D, 0); // Débinder la texture
         }
     }
 }
@@ -258,11 +280,9 @@ bool Initialise()
 	g_BasicShader.LoadFragmentShader("Basic.fs");
 	g_BasicShader.Create();
 
-
-	//Texture
+	// Texture loading
 	int texWidth, texHeight, texChannels;
 	unsigned char* data = stbi_load("dragon.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-
 	if (data) {
 		std::cout << "Texture chargée avec succès : " << texWidth << "x" << texHeight 
 				  << " (" << texChannels << " canaux)" << std::endl;
@@ -288,34 +308,32 @@ bool Initialise()
 		std::cerr << "Chemin tenté : " << std::filesystem::absolute("dragon.png").string() << std::endl;
 	}
 
-	// création du VAO
+	// Configuration des buffers
 	glGenVertexArrays(1, &VAO);
 	glBindVertexArray(VAO);
-
-	// VBO
+	
+	// Configuration du VBO
 	glGenBuffers(1, &VBO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(DragonVertices), DragonVertices, GL_STATIC_DRAW);
-	//glBindBuffer(GL_ARRAY_BUFFER, 0); // reinitialisation les etats a la fin pour eviter les effets de bord
-
-	// IBO
+	
+	// Configuration de l'IBO
 	glGenBuffers(1, &IBO);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(DragonIndices), DragonIndices, GL_STATIC_DRAW);
 
-	// Paramètrage de la forme
-	auto basicProgram = g_BasicShader.GetProgram();
-	glUseProgram(basicProgram);
+	// Configuration des attributs
+	GLuint program = g_BasicShader.GetProgram();
+	glUseProgram(program);
 
-	int loc_position = glGetAttribLocation(basicProgram, "a_position");
-	int loc_couleur = glGetAttribLocation(basicProgram, "a_normal");
-	int loc_uv = glGetAttribLocation(basicProgram, "a_uv");
+	int loc_position = glGetAttribLocation(program, "a_position");
+	int loc_normal = glGetAttribLocation(program, "a_normal");
+	int loc_uv = glGetAttribLocation(program, "a_uv");
 
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glVertexAttribPointer(loc_position, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, position));
+	glVertexAttribPointer(loc_position, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
 	glEnableVertexAttribArray(loc_position);
-	glVertexAttribPointer(loc_couleur, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, normal));
-	glEnableVertexAttribArray(loc_couleur);
+	glVertexAttribPointer(loc_normal, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+	glEnableVertexAttribArray(loc_normal);
 	glVertexAttribPointer(loc_uv, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 	glEnableVertexAttribArray(loc_uv);
 
@@ -594,63 +612,54 @@ void Render()
 	auto basicProgram = g_BasicShader.GetProgram();
 	glUseProgram(basicProgram);
 
-	int loc_texture = glGetUniformLocation(basicProgram, "u_texture");
-	glUniform1i(loc_texture, 0);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, textureID);
-
-	// Debug de la texture
-	GLint boundTexture;
-	glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
-	if (boundTexture != textureID) {
-		std::cout << "Warning: Texture non liée correctement" << std::endl;
-	}
-
 	// Combine matrices into one transformation matrix
-	float transform[16];
-	combineTRS(translation, rotation, scale, transform);
+	Mat4 scaleMatrix = Mat4::scale(scale[0], scale[1], scale[2]);
+	Mat4 rotationMatrix = Mat4::rotate(radians, 0.0f, 0.0f, 1.0f);
+	Mat4 translationMatrix = Mat4::translate(translation[12], translation[13], translation[14]);
+	Mat4 transformMatrix = translationMatrix * rotationMatrix * scaleMatrix;
 	GLint loc_transform = glGetUniformLocation(basicProgram, "u_transform");
-	glUniformMatrix4fv(loc_transform, 1, GL_FALSE, transform);
+	glUniformMatrix4fv(loc_transform, 1, GL_FALSE, transformMatrix.data());
 
 	// Create and pass the perspective projection matrix.
-	float projection[16];
-	createPerspectiveMatrix(fov, (float)width / height, cam_near, cam_far, projection);
+	Mat4 projectionMatrix = Mat4::perspective(fov, (float)width / height, cam_near, cam_far);
 	GLint loc_projection = glGetUniformLocation(basicProgram, "u_projection");
-	glUniformMatrix4fv(loc_projection, 1, GL_FALSE, projection);
+	glUniformMatrix4fv(loc_projection, 1, GL_FALSE, projectionMatrix.data());
 
 	// Créer la matrice de vue
-	float view[16];
 	float center[3] = {
 		camera.position[0] + camera.front[0],
 		camera.position[1] + camera.front[1],
 		camera.position[2] + camera.front[2]
 	};
-	createLookAtMatrix(camera.position, center, camera.up, view);
+	Mat4 viewMatrix = Mat4::lookAt(camera.position, center, camera.up);
 
 	// Passer la matrice de vue au shader
 	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
-	glUniformMatrix4fv(loc_view, 1, GL_FALSE, view);
+	glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
 
 	// Rendre le skybox en premier, mais après avoir configuré les matrices
 	glDepthFunc(GL_LEQUAL);
 	glUseProgram(g_SkyboxShader.GetProgram());
 
 	// Enlever la translation de la matrice de vue pour le skybox
-	float skyboxView[16];
-	memcpy(skyboxView, view, sizeof(float) * 16);
-	skyboxView[12] = 0.0f;
-	skyboxView[13] = 0.0f;
-	skyboxView[14] = 0.0f;
+	Mat4 skyboxView = viewMatrix;
+	float* skyboxData = skyboxView.data();
+	skyboxData[12] = 0.0f;
+	skyboxData[13] = 0.0f;
+	skyboxData[14] = 0.0f;
 
 	GLint skyboxViewLoc = glGetUniformLocation(g_SkyboxShader.GetProgram(), "u_view");
 	GLint skyboxProjLoc = glGetUniformLocation(g_SkyboxShader.GetProgram(), "u_projection");
-	glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, skyboxView);
-	glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, projection);
+	glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, skyboxView.data());
+	glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, projectionMatrix.data());
 
 	glBindVertexArray(skyboxVAO);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, skyboxTexture);
 	glDrawArrays(GL_TRIANGLES, 0, 36);
+	
+	// Débinder la texture du skybox avant de passer aux planètes
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Réinitialiser les états OpenGL pour le rendu normal
 	glDepthFunc(GL_LESS);
@@ -709,16 +718,24 @@ void Render()
 	// Mise à jour des planètes
 	updatePlanets();
 
-	// Dessiner tous les objets de la scène
+	// Modifier la manière dont les objets sont rendus
 	for(Mesh* obj : sceneObjects) {
-        // Ne pas appliquer l'éclairage au soleil
         if(obj == sun) {
             Material sunMat = obj->getMaterial();
             sunMat.isEmissive = true;
             obj->setMaterial(sunMat);
+            
+            // S'assurer que le soleil n'utilise pas de texture
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, 0);
         }
-		obj->draw(g_BasicShader);
-	}
+        
+        // Chaque objet va gérer sa propre texture dans sa méthode draw()
+        obj->draw(g_BasicShader);
+        
+        // Débinder la texture après chaque objet
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 
 	// Début du rendu ImGui
 	ImGui_ImplOpenGL3_NewFrame();
@@ -788,7 +805,11 @@ void Render()
 		// Ajout de debug pour la texture dans l'interface ImGui
 		if (ImGui::CollapsingHeader("Texture Debug")) {
 			ImGui::Text("Texture ID: %d", textureID);
-			ImGui::Text("Texture Binding: %d", boundTexture);
+			
+			// Afficher les IDs des textures des planètes
+			for (size_t i = 0; i < planets.size(); i++) {
+				ImGui::Text("Planet %zu Texture ID: %d", i, planets[i].mesh->getMaterial().diffuseMap);
+			}
 		}
 
 		// Contrôles d'éclairage simplifiés
