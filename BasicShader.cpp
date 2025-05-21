@@ -204,44 +204,15 @@ void loadPlanetTextures() {
             planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
             planetMaterial.shininess = 32.0f;
             planetMaterial.isEmissive = false;
+            planet.mesh->setMaterial(planetMaterial);
             
-            // S'assurer de libérer l'ancienne texture si elle existe
-            if (planet.texture != 0) {
-                glDeleteTextures(1, &planet.texture);
-            }
-            
-            // Charger earth.png avec stbi_load
-            int texWidth, texHeight, texChannels;
-            unsigned char* data = stbi_load("earth.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-            
-            if (data) {
-                GLuint textureID;
-                glGenTextures(1, &textureID);
-                glBindTexture(GL_TEXTURE_2D, textureID);
-                
-                // Configuration de la texture
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-                glGenerateMipmap(GL_TEXTURE_2D);
-                
-                stbi_image_free(data);
-                
-                // Assigner la texture
-                planetMaterial.diffuseMap = textureID;
-                planet.texture = textureID;
-                
+            // Charger la texture
+            if (planet.mesh->loadTexture("earth.png")) {
                 std::cout << "Texture earth.png chargée avec succès pour la planète " << i << std::endl;
+                planet.texture = planet.mesh->getMaterial().diffuseMap;
             } else {
                 std::cerr << "Erreur : impossible de charger earth.png pour la planète " << i << std::endl;
-                std::cerr << "Raison : " << stbi_failure_reason() << std::endl;
             }
-            
-            planet.mesh->setMaterial(planetMaterial);
-            glBindTexture(GL_TEXTURE_2D, 0); // Débinder la texture
         }
     }
 }
