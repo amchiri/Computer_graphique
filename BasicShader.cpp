@@ -17,11 +17,12 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui/imgui.h"
-#include "imgui/imgui_impl_opengl3.h"
-#include "imgui/imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include "imgui_impl_glfw.h"
 #include "Mat4.h"
 #include <windows.h>
 #include <commdlg.h>
+#include <map>
 
 // Skybox variables
 GLuint skyboxVAO, skyboxVBO;
@@ -84,12 +85,23 @@ struct Planet {
 
 std::vector<Planet> planets;
 
+// Structure pour les transformations des objets
+struct ObjectTransform {
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    float rotation[3] = {0.0f, 0.0f, 0.0f};
+    float scale[3] = {1.0f, 1.0f, 1.0f};
+};
+
+// Map globale pour stocker les transformations des objets
+std::map<Mesh*, ObjectTransform> objectTransforms;
+
 // Déclarations des prototypes de fonctions
 void createPlanets();
 void loadPlanetTextures();
 void updatePlanets();
 void initializeSolarSystem();
 void createSkybox();
+void AdjustInitialCamera();
 
 // Fonction de callback pour la souris
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -255,6 +267,9 @@ bool Initialise()
 	// Création du soleil et des planètes
 	initializeSolarSystem();
 
+	// Ajuster la caméra pour mieux voir le système solaire
+	AdjustInitialCamera();
+
 	// Configuration d'ImGui avec une plus grande taille de police
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -362,8 +377,13 @@ void initializeSolarSystem() {
     // Création du soleil
     sun = new Mesh();
     sun->createSphere(1.0f, 32, 32);
-    sun->setScale(5.0f, 5.0f, 5.0f);
-    sun->setPosition(0.0f, 10.0f, -15.0f);
+
+    // Position et échelle du soleil au centre
+    const float sunInitialScale = 8.0f;
+    const float sunInitialPos[3] = {0.0f, 0.0f, 0.0f};  // Centre de la scène
+
+    sun->setScale(sunInitialScale, sunInitialScale, sunInitialScale);
+    sun->setPosition(sunInitialPos[0], sunInitialPos[1], sunInitialPos[2]);
 
     Material sunMaterial;
     sunMaterial.diffuse[0] = sunMaterial.diffuse[1] = sunMaterial.diffuse[2] = 1.0f;
@@ -372,10 +392,14 @@ void initializeSolarSystem() {
     sunMaterial.isEmissive = true;
     sun->setMaterial(sunMaterial);
     sun->loadTexture("models/sun.png");
-    
-    sceneObjects.push_back(sun);
 
-    // Création et initialisation des planètes
+    // Initialiser les transformations du soleil
+    ObjectTransform& sunTransform = objectTransforms[sun];
+    memcpy(sunTransform.position, sunInitialPos, sizeof(float) * 3);
+    sunTransform.scale[0] = sunTransform.scale[1] = sunTransform.scale[2] = sunInitialScale;
+    sunTransform.rotation[0] = sunTransform.rotation[1] = sunTransform.rotation[2] = 0.0f;
+
+    sceneObjects.push_back(sun);
     createPlanets();
     loadPlanetTextures();
 }
@@ -383,20 +407,36 @@ void initializeSolarSystem() {
 void createPlanets() {
     // Paramètres des planètes: rayon orbital, vitesse orbitale, taille
     float planetData[][4] = {
-        {20.0f, 0.47f, 0.38f},  // Mercure
-        {30.0f, 0.35f, 0.95f},  // Vénus
-        {40.0f, 0.30f, 1.0f},   // Terre
-        {50.0f, 0.24f, 0.53f},  // Mars
-        {70.0f, 0.13f, 11.2f},  // Jupiter
-        {90.0f, 0.10f, 9.5f},   // Saturne
-        {110.0f, 0.07f, 4.0f},  // Uranus
+        {15.0f, 0.8f, 0.8f},    // Mercure - plus proche, plus rapide
+        {20.0f, 0.6f, 1.2f},    // Vénus
+        {28.0f, 0.4f, 1.5f},    // Terre
+        {35.0f, 0.3f, 1.2f},    // Mars
+        {50.0f, 0.15f, 4.0f},   // Jupiter - plus gros
+        {65.0f, 0.12f, 3.5f},   // Saturne
+        {80.0f, 0.08f, 2.5f},   // Uranus
     };
 
-    // Création des planètes
+    float time = glfwGetTime();
+
     for(int i = 0; i < 7; i++) {
         Planet planet;
         planet.mesh = new Mesh();
         planet.mesh->createSphere(1.0f, 32, 32);
+        
+        // Initialisation des paramètres de la planète
+        planet.orbitRadius = planetData[i][0];
+        planet.rotationSpeed = planetData[i][1];
+        planet.size = planetData[i][2];
+        planet.selfRotation = 0.0f;
+
+        // Calculer la position initiale sur l'orbite
+        float angle = time * planet.rotationSpeed;
+        float x = cos(angle) * planet.orbitRadius;
+        float z = sin(angle) * planet.orbitRadius;
+
+        // Appliquer les transformations initiales
+        planet.mesh->setScale(planet.size, planet.size, planet.size);
+        planet.mesh->setPosition(x, 0.0f, z);
         
         // Configuration du matériau
         Material planetMaterial;
@@ -405,15 +445,15 @@ void createPlanets() {
         planetMaterial.shininess = 32.0f;
         planetMaterial.isEmissive = false;
         planet.mesh->setMaterial(planetMaterial);
-        
-        planet.mesh->setScale(planetData[i][2], planetData[i][2], planetData[i][2]);
-        planet.orbitRadius = planetData[i][0];
-        planet.rotationSpeed = planetData[i][1];
-        planet.selfRotation = 0.0f;
-        planet.size = planetData[i][2];
-        
-        // Les textures seront chargées séparément
-        planet.texture = 0;
+
+        // Initialiser les transformations stockées
+        ObjectTransform& planetTransform = objectTransforms[planet.mesh];
+        planetTransform.position[0] = x;
+        planetTransform.position[1] = 0.0f;
+        planetTransform.position[2] = z;
+        planetTransform.scale[0] = planetTransform.scale[1] = planetTransform.scale[2] = planet.size;
+        planetTransform.rotation[0] = planetTransform.rotation[1] = planetTransform.rotation[2] = 0.0f;
+
         planets.push_back(planet);
         sceneObjects.push_back(planet.mesh);
     }
@@ -427,48 +467,40 @@ void updatePlanets() {
     for(size_t i = 0; i < planets.size(); i++) {
         Planet& planet = planets[i];
         
-        // Calcul de la position orbitale avec stabilisation
+        // Calcul de la position orbitale
         float angle = time * planet.rotationSpeed;
         float x = cos(angle) * planet.orbitRadius;
         float z = sin(angle) * planet.orbitRadius;
         
-        // Créer une matrice de translation pour la position orbitale
-        Mat4 orbitalTransform = Mat4::translate(x, 0.0f, z);
+        // Créer la matrice de transformation
+        Mat4 translation = Mat4::translate(x, 0.0f, z);
+        Mat4 rotation = Mat4::rotate(planet.selfRotation, 0.0f, 1.0f, 0.0f);
+        Mat4 scale = Mat4::scale(planet.size, planet.size, planet.size);
         
-        // Rotation sur elle-même avec Mat4
+        // Combiner les transformations
+        Mat4 transform = translation * rotation * scale;
+        
+        // Appliquer la transformation
+        planet.mesh->setTransform(transform);
+        
+        // Mettre à jour les transformations stockées
+        ObjectTransform& objectTransform = objectTransforms[planet.mesh];
+        objectTransform.position[0] = x;
+        objectTransform.position[1] = 0.0f;
+        objectTransform.position[2] = z;
+        objectTransform.scale[0] = objectTransform.scale[1] = objectTransform.scale[2] = planet.size;
+        
+        // Mettre à jour la rotation
         planet.selfRotation += elapsed_time * 0.5f;
-        Mat4 rotationMatrix = Mat4::rotate(planet.selfRotation, 0.0f, 1.0f, 0.0f);
-        
-        // Appliquer la transformation finale
-        Mat4 finalTransform = orbitalTransform * rotationMatrix;
-        planet.mesh->setTransform(finalTransform);
-        
-        // Calculer la direction de la lumière à partir du soleil vers la planète
-        const float* planetPos = planet.mesh->getPosition();
-        float dirToSun[3] = {
-            sunPos[0] - planetPos[0],
-            sunPos[1] - planetPos[1],
-            sunPos[2] - planetPos[2]
-        };
-        
-        // Calculer la distance au soleil
-        float distToSun = sqrt(
-            dirToSun[0] * dirToSun[0] + 
-            dirToSun[1] * dirToSun[1] + 
-            dirToSun[2] * dirToSun[2]
-        );
-
-        // Normaliser la direction
-        dirToSun[0] /= distToSun;
-        dirToSun[1] /= distToSun;
-        dirToSun[2] /= distToSun;
-        
-        // Mettre à jour le matériau avec la direction calculée
-        Material mat = planet.mesh->getMaterial();
-        float lightIntensity = 1.5f / (1.0f + 0.01f * distToSun);
-        mat.diffuse[0] = mat.diffuse[1] = mat.diffuse[2] = lightIntensity;
-        planet.mesh->setMaterial(mat);
     }
+}
+
+void AdjustInitialCamera() {
+    camera.position[0] = 0.0f;
+    camera.position[1] = 50.0f;  // Plus haut pour voir le système
+    camera.position[2] = 100.0f; // Plus loin pour tout voir
+    camera.pitch = -30.0f;       // Regarder vers le bas
+    camera.yaw = -90.0f;
 }
 
 void Terminate()
@@ -502,97 +534,54 @@ void Terminate()
 void RenderImGuiObjectControls() {
     if (!show_debug_window) return;
 
-    if (ImGui::CollapsingHeader("Object Controls")) {
-        // File browser pour les modèles
-        ImGui::InputText("Selected OBJ", selected_file, sizeof(selected_file));
-        if (ImGui::Button("Browse OBJ")) {
-            // Ouvrir un dialogue de fichier natif
-            OPENFILENAMEA ofn;
-            char szFile[260] = { 0 };
-            ZeroMemory(&ofn, sizeof(ofn));
-            ofn.lStructSize = sizeof(ofn);
-            ofn.hwndOwner = nullptr;
-            ofn.lpstrFile = szFile;
-            ofn.nMaxFile = sizeof(szFile);
-            ofn.lpstrFilter = "OBJ Files\0*.obj\0";
-            ofn.nFilterIndex = 1;
-            ofn.lpstrFileTitle = nullptr;
-            ofn.nMaxFileTitle = 0;
-            ofn.lpstrInitialDir = nullptr;
-            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-            if (GetOpenFileNameA(&ofn)) {
-                strcpy(selected_file, szFile);
+    if (ImGui::CollapsingHeader("Scene Objects")) {
+        // Le Soleil
+        if (ImGui::TreeNode("Sun")) {
+            ObjectTransform& transform = objectTransforms[sun];
+            
+            if (ImGui::DragFloat3("Position", transform.position, 0.1f)) {
+                sun->setPosition(transform.position[0], transform.position[1], transform.position[2]);
             }
-        }
-
-        // File browser pour les textures
-        ImGui::InputText("Selected Texture", selected_texture, sizeof(selected_texture));
-        if (ImGui::Button("Browse Texture")) {
-            OPENFILENAMEA ofn;
-            char szFile[260] = { 0 };
-            ZeroMemory(&ofn, sizeof(ofn));
-            ofn.lStructSize = sizeof(ofn);
-            ofn.hwndOwner = nullptr;
-            ofn.lpstrFile = szFile;
-            ofn.nMaxFile = sizeof(szFile);
-            ofn.lpstrFilter = "PNG Files\0*.png\0";
-            ofn.nFilterIndex = 1;
-            ofn.lpstrFileTitle = nullptr;
-            ofn.nMaxFileTitle = 0;
-            ofn.lpstrInitialDir = nullptr;
-            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-            if (GetOpenFileNameA(&ofn)) {
-                strcpy(selected_texture, szFile);
+            
+            if (ImGui::DragFloat3("Scale", transform.scale, 0.1f, 0.1f, 100.0f)) {
+                sun->setScale(transform.scale[0], transform.scale[1], transform.scale[2]);
             }
-        }
-
-        // Bouton pour charger le modèle et sa texture
-        if (ImGui::Button("Load Model with Texture")) {
-            if (strlen(selected_file) > 0) {
-                Mesh* new_model = new Mesh();
-                if (new_model->loadFromOBJFile(selected_file)) {
-                    if (strlen(selected_texture) > 0) {
-                        new_model->loadTexture(selected_texture);
-                    }
-                    sceneObjects.push_back(new_model);
-                } else {
-                    delete new_model;
-                    ImGui::OpenPopup("Error");
-                }
+            
+            if (ImGui::DragFloat3("Rotation", transform.rotation, 0.1f)) {
+                Mat4 rotMatrix = Mat4::rotate(transform.rotation[0], 1, 0, 0) *
+                               Mat4::rotate(transform.rotation[1], 0, 1, 0) *
+                               Mat4::rotate(transform.rotation[2], 0, 0, 1);
+                sun->setRotation(rotMatrix);
             }
+            
+            ImGui::TreePop();
         }
-
-        // Liste des objets avec contrôles de transformation
-        for (size_t i = 0; i < sceneObjects.size(); i++) {
+        
+        // Les Planètes
+        for (size_t i = 0; i < planets.size(); i++) {
             char label[32];
-            sprintf(label, "Object %zu", i);
+            sprintf(label, "Planet %zu", i);
+            
             if (ImGui::TreeNode(label)) {
-                Mesh* obj = sceneObjects[i];
+                Planet& planet = planets[i];
+                ObjectTransform& transform = objectTransforms[planet.mesh];
                 
-                // Position
-                float pos[3];
-                memcpy(pos, obj->getPosition(), sizeof(float) * 3);
-                if (ImGui::DragFloat3("Position", pos, 0.1f)) {
-                    obj->setPosition(pos[0], pos[1], pos[2]);
+                if (ImGui::DragFloat("Orbit Radius", &planet.orbitRadius, 0.1f, 1.0f, 200.0f)) {
+                    // La mise à jour de la position sera faite dans updatePlanets
                 }
                 
-                // Rotation
-                static float rotation[3] = {0, 0, 0};
-                if (ImGui::DragFloat3("Rotation", rotation, 0.1f)) {
-                    Mat4 rotMatrix = Mat4::rotate(rotation[0], 1, 0, 0) *
-                                   Mat4::rotate(rotation[1], 0, 1, 0) *
-                                   Mat4::rotate(rotation[2], 0, 0, 1);
-                    obj->setRotation(rotMatrix);
+                if (ImGui::DragFloat("Size", &planet.size, 0.1f, 0.1f, 100.0f)) {
+                    transform.scale[0] = transform.scale[1] = transform.scale[2] = planet.size;
                 }
                 
-                // Scale
-                float scale[3] = {1, 1, 1}; // Vous devrez ajouter une façon de stocker/récupérer l'échelle
-                if (ImGui::DragFloat3("Scale", scale, 0.1f, 0.1f, 10.0f)) {
-                    obj->setScale(scale[0], scale[1], scale[2]);
+                if (ImGui::DragFloat("Orbital Speed", &planet.rotationSpeed, 0.01f, 0.0f, 2.0f)) {
+                    // La vitesse de rotation sera utilisée dans updatePlanets
                 }
-
+                
+                // Afficher la position actuelle (lecture seule)
+                ImGui::Text("Current Position: %.2f, %.2f, %.2f",
+                    transform.position[0], transform.position[1], transform.position[2]);
+                
                 ImGui::TreePop();
             }
         }
@@ -775,19 +764,6 @@ void Render()
 				ImGui::Text("Failed to load model!");
 				if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
 				ImGui::EndPopup();
-			}
-		}
-
-		// Liste des objets dans la scène
-		if (ImGui::CollapsingHeader("Scene Objects")) {
-			for (size_t i = 0; i < sceneObjects.size(); i++) {
-				char label[32];
-				sprintf(label, "Object %zu", i);
-				if (ImGui::TreeNode(label)) {
-					float* pos = (float*)sceneObjects[i]->getPosition();
-					ImGui::SliderFloat3("Position", pos, -50.0f, 50.0f);
-					ImGui::TreePop();
-				}
 			}
 		}
 

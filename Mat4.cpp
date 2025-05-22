@@ -39,6 +39,19 @@ Mat4 Mat4::operator*(const Mat4& other) const {
     return result;
 }
 
+bool Mat4::operator==(const Mat4& other) const {
+    for (size_t i = 0; i < 16; ++i) {
+        if (m_data[i] != other.m_data[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Mat4::operator!=(const Mat4& other) const {
+    return !(*this == other);
+}
+
 Mat4 Mat4::translate(float x, float y, float z) {
     Mat4 result = identity();
     result.m_data[12] = x;

@@ -18,6 +18,10 @@ public:
     Mat4& operator=(const Mat4& other);
     Mat4 operator*(const Mat4& other) const;
     
+    // Opérateurs de comparaison
+    bool operator==(const Mat4& other) const;
+    bool operator!=(const Mat4& other) const;
+
     // Transformations
     static Mat4 translate(float x, float y, float z);
     static Mat4 rotate(float angle, float x, float y, float z);

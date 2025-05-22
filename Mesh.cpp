@@ -153,7 +153,23 @@ const Mat4& Mesh::getTransform() const {
 }
 
 void Mesh::calculateModelMatrix(float* outMatrix) {
-    memcpy(outMatrix, m_transform.data(), 16 * sizeof(float));
+    Mat4 model = Mat4::identity();
+    
+    // Appliquer d'abord l'échelle
+    model = model * Mat4::scale(scale[0], scale[1], scale[2]);
+    
+    // Ensuite la rotation
+    model = model * rotation;
+    
+    // Finalement la translation
+    model = model * Mat4::translate(position[0], position[1], position[2]);
+    
+    // Si une transformation personnalisée est définie, l'appliquer
+    if (m_transform != Mat4::identity()) {
+        model = m_transform;
+    }
+    
+    memcpy(outMatrix, model.data(), 16 * sizeof(float));
 }
 
 void Mesh::createSphere(float radius, int sectors, int stacks) {
