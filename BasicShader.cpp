@@ -4,6 +4,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
+#include <algorithm>  // Ajouter cette ligne pour std::find_if
 
 #include <iostream>
 #include <vector>
@@ -34,7 +35,7 @@ GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
 int width = 1200, height = 900; // taille de la fenêtre
 
 float fov = 60 * (3.14159f / 180.0f); // angle d'ouverture de 60°
-float cam_far = 100.0f;
+float cam_far = 1000.0f;  // Augmenter cette valeur (était 100.0f)
 float cam_near = 0.1f;
 
 // Structure et variables pour la caméra
@@ -102,6 +103,10 @@ void updatePlanets();
 void initializeSolarSystem();
 void createSkybox();
 void AdjustInitialCamera();
+
+// Déclarer les prototypes des fonctions utilisées dans RenderImGuiObjectControls
+std::string OpenFileDialog(const char* filter = "OBJ files\0*.obj\0All files\0*.*\0");
+bool LoadModelWithTexture(const std::string& modelPath);
 
 // Fonction de callback pour la souris
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -558,34 +563,171 @@ void RenderImGuiObjectControls() {
         }
         
         // Les Planètes
-        for (size_t i = 0; i < planets.size(); i++) {
-            char label[32];
-            sprintf(label, "Planet %zu", i);
-            
-            if (ImGui::TreeNode(label)) {
-                Planet& planet = planets[i];
-                ObjectTransform& transform = objectTransforms[planet.mesh];
+        if (ImGui::TreeNode("Planets")) {
+            for (size_t i = 0; i < planets.size(); i++) {
+                char label[32];
+                sprintf(label, "Planet %zu", i);
                 
-                if (ImGui::DragFloat("Orbit Radius", &planet.orbitRadius, 0.1f, 1.0f, 200.0f)) {
-                    // La mise à jour de la position sera faite dans updatePlanets
+                if (ImGui::TreeNode(label)) {
+                    Planet& planet = planets[i];
+                    ObjectTransform& transform = objectTransforms[planet.mesh];
+                    
+                    if (ImGui::DragFloat("Orbit Radius", &planet.orbitRadius, 0.1f, 1.0f, 200.0f)) {
+                        // La mise à jour de la position sera faite dans updatePlanets
+                    }
+                    
+                    if (ImGui::DragFloat("Size", &planet.size, 0.1f, 0.1f, 100.0f)) {
+                        transform.scale[0] = transform.scale[1] = transform.scale[2] = planet.size;
+                    }
+                    
+                    if (ImGui::DragFloat("Orbital Speed", &planet.rotationSpeed, 0.01f, 0.0f, 2.0f)) {
+                        // La vitesse de rotation sera utilisée dans updatePlanets
+                    }
+                    
+                    ImGui::Text("Current Position: %.2f, %.2f, %.2f",
+                        transform.position[0], transform.position[1], transform.position[2]);
+                    
+                    ImGui::TreePop();
                 }
-                
-                if (ImGui::DragFloat("Size", &planet.size, 0.1f, 0.1f, 100.0f)) {
-                    transform.scale[0] = transform.scale[1] = transform.scale[2] = planet.size;
-                }
-                
-                if (ImGui::DragFloat("Orbital Speed", &planet.rotationSpeed, 0.01f, 0.0f, 2.0f)) {
-                    // La vitesse de rotation sera utilisée dans updatePlanets
-                }
-                
-                // Afficher la position actuelle (lecture seule)
-                ImGui::Text("Current Position: %.2f, %.2f, %.2f",
-                    transform.position[0], transform.position[1], transform.position[2]);
-                
-                ImGui::TreePop();
             }
+            ImGui::TreePop();
+        }
+
+        // Objets chargés dynamiquement
+        if (ImGui::TreeNode("Custom Objects")) {
+            for (size_t i = 0; i < sceneObjects.size(); i++) {
+                // Skip sun and planets
+                if (sceneObjects[i] == sun || std::find_if(planets.begin(), planets.end(),
+                    [&](const Planet& p) { return p.mesh == sceneObjects[i]; }) != planets.end()) {
+                    continue;
+                }
+
+                char label[32];
+                sprintf(label, "Object %zu", i);
+                
+                if (ImGui::TreeNode(label)) {
+                    ObjectTransform& transform = objectTransforms[sceneObjects[i]];
+                    
+                    if (ImGui::DragFloat3("Position", transform.position, 0.1f)) {
+                        sceneObjects[i]->setPosition(transform.position[0], transform.position[1], transform.position[2]);
+                    }
+                    
+                    if (ImGui::DragFloat3("Scale", transform.scale, 0.1f, 0.1f, 100.0f)) {
+                        sceneObjects[i]->setScale(transform.scale[0], transform.scale[1], transform.scale[2]);
+                    }
+                    
+                    if (ImGui::DragFloat3("Rotation", transform.rotation, 0.1f)) {
+                        Mat4 rotMatrix = Mat4::rotate(transform.rotation[0], 1, 0, 0) *
+                                       Mat4::rotate(transform.rotation[1], 0, 1, 0) *
+                                       Mat4::rotate(transform.rotation[2], 0, 0, 1);
+                        sceneObjects[i]->setRotation(rotMatrix);
+                    }
+
+                    // Option pour supprimer l'objet
+                    if (ImGui::Button("Delete Object")) {
+                        objectTransforms.erase(sceneObjects[i]);
+                        delete sceneObjects[i];
+                        sceneObjects.erase(sceneObjects.begin() + i);
+                        ImGui::TreePop();
+                        break;
+                    }
+                    
+                    ImGui::TreePop();
+                }
+            }
+            ImGui::TreePop();
         }
     }
+
+    if (ImGui::CollapsingHeader("Model Loader")) {
+        if (ImGui::Button("Load 3D Model")) {
+            std::string filepath = OpenFileDialog();
+            if (!filepath.empty()) {
+                if (!LoadModelWithTexture(filepath)) {
+                    ImGui::OpenPopup("Error Loading Model");
+                }
+            }
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Load Texture")) {
+            if (selected_object >= 0 && selected_object < sceneObjects.size()) {
+                std::string texturePath = OpenFileDialog("Image files\0*.png;*.jpg;*.jpeg\0All files\0*.*\0");
+                if (!texturePath.empty()) {
+                    sceneObjects[selected_object]->loadTexture(texturePath.c_str());
+                }
+            }
+        }
+
+        // Liste des objets chargés
+        ImGui::Text("Loaded Objects:");
+        for (size_t i = 0; i < sceneObjects.size(); i++) {
+            char label[32];
+            sprintf(label, "Object %zu", i);
+            bool is_selected = (selected_object == i);
+            if (ImGui::Selectable(label, is_selected)) {
+                selected_object = i;
+            }
+        }
+        
+        if (ImGui::BeginPopupModal("Error Loading Model", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Failed to load the model!");
+            if (ImGui::Button("OK")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+// Déplacer les implémentations des fonctions OpenFileDialog et LoadModelWithTexture ici,
+// avant leur utilisation dans RenderImGuiObjectControls
+std::string OpenFileDialog(const char* filter) {
+    char filename[MAX_PATH];
+    filename[0] = '\0';
+
+    OPENFILENAMEA ofn;
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = NULL;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+    ofn.lpstrDefExt = "";
+
+    if (GetOpenFileNameA(&ofn))
+        return filename;
+    return "";
+}
+
+bool LoadModelWithTexture(const std::string& modelPath) {
+    Mesh* new_model = new Mesh();
+    if (!new_model->loadFromOBJFile(modelPath.c_str())) {
+        delete new_model;
+        return false;
+    }
+
+    // Chercher une texture avec le même nom que le modèle
+    std::string basePath = modelPath.substr(0, modelPath.find_last_of("."));
+    std::string texturePath = basePath + ".png"; // Essayer d'abord PNG
+    
+    if (!std::filesystem::exists(texturePath)) {
+        texturePath = basePath + ".jpg"; // Essayer ensuite JPG
+    }
+
+    if (std::filesystem::exists(texturePath)) {
+        new_model->loadTexture(texturePath.c_str());
+    }
+
+    new_model->setScale(0.5f, 0.5f, 0.5f);
+    sceneObjects.push_back(new_model);
+    
+    // Initialiser les transformations
+    ObjectTransform transform;
+    objectTransforms[new_model] = transform;
+    
+    return true;
 }
 
 void Render()
@@ -624,7 +766,17 @@ void Render()
 	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
 	glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
 
-	// Rendre le skybox en premier, mais après avoir configuré les matrices
+	// Rendre d'abord les objets de la scène
+	for(Mesh* obj : sceneObjects) {
+        if(obj == sun) {
+            Material sunMat = obj->getMaterial();
+            sunMat.isEmissive = true;
+            obj->setMaterial(sunMat);
+        }
+        obj->draw(g_BasicShader);
+    }
+
+    // Puis rendre la skybox en dernier
 	glDepthFunc(GL_LEQUAL);
 	glUseProgram(g_SkyboxShader.GetProgram());
 
@@ -747,25 +899,6 @@ void Render()
 			}
 		}
 
-		// Chargement de modèles OBJ
-		if (ImGui::CollapsingHeader("Model Loader")) {
-			ImGui::InputText("Model Path", obj_path, sizeof(obj_path));
-			if (ImGui::Button("Load Model")) {
-				Mesh* new_model = new Mesh();
-				if (new_model->loadFromOBJFile(obj_path)) {
-					new_model->setScale(0.5f, 0.5f, 0.5f);
-					sceneObjects.push_back(new_model);
-				} else {
-					delete new_model;
-					ImGui::OpenPopup("Error");
-				}
-			}
-			if (ImGui::BeginPopupModal("Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::Text("Failed to load model!");
-				if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
-				ImGui::EndPopup();
-			}
-		}
 
 		// Ajout de debug pour la texture dans l'interface ImGui
 		if (ImGui::CollapsingHeader("Texture Debug")) {
