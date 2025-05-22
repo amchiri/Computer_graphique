@@ -20,42 +20,17 @@
 #include "imgui/imgui_impl_opengl3.h"
 #include "imgui/imgui_impl_glfw.h"
 #include "Mat4.h"
-
-// VBO : buffer les valeurs des paramètres des vertexes
-// IBO : buffer les vertexes pour ne pas redéssiner plusieurs fois les mêmes
-// VAO : buffer les paramètres des vertexes (le mapping)
-GLuint VBO, IBO, VAO;
-GLuint textureID;
-GLShader g_BasicShader;
-GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
-int width = 1200, height = 900; // taille de la fenêtre
+#include <windows.h>
+#include <commdlg.h>
 
 // Skybox variables
 GLuint skyboxVAO, skyboxVBO;
 GLuint skyboxTexture;
 GLShader g_SkyboxShader;
 
-// matrice de scale *2
-float scale[16] = {
-	0.5f, 0.0f, 0.0f, 0.0f,
-	0.0f, 0.5f, 0.0f, 0.0f,
-	0.0f, 0.0f, 0.5f, 0.0f,
-	0.0f, 0.0f, 0.0f, 1.0f};
-
-// Matrice de rotation 45° sur l'axe Z
-float radians = 0 * (3.14159f / 180.0f);
-float rotation[16] = {
-	cos(radians), -sin(radians), 0.0f, 0.0f,
-	sin(radians), cos(radians), 0.0f, 0.0f,
-	0.0f, 0.0f, 1.0f, 0.0f,
-	0.0f, 0.0f, 0.0f, 1.0f};
-
-// matrice de translation sur l'axe X
-float translation[16] = {
-	1.0f, 0.0f, 0.0f, 0.0f,
-	0.0f, 1.0f, 0.0f, 0.0f,
-	0.0f, 0.0f, 1.0f, 0.0f,
-	0.0f, 0.0f, -10.0f, 1.0f};
+GLShader g_BasicShader;
+GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
+int width = 1200, height = 900; // taille de la fenêtre
 
 float fov = 60 * (3.14159f / 180.0f); // angle d'ouverture de 60°
 float cam_far = 100.0f;
@@ -91,6 +66,12 @@ char obj_path[256] = "models/dragon.obj";
 float elapsed_time = 0.0f;
 float last_frame_time = 0.0f;
 
+// Variables globales ajoutées
+bool camera_enabled = true;
+char selected_file[256] = "";
+char selected_texture[256] = "";
+int selected_object = -1;
+
 // Structure pour les planètes
 struct Planet {
     Mesh* mesh;
@@ -107,6 +88,8 @@ std::vector<Planet> planets;
 void createPlanets();
 void loadPlanetTextures();
 void updatePlanets();
+void initializeSolarSystem();
+void createSkybox();
 
 // Fonction de callback pour la souris
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
@@ -144,17 +127,16 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 
 // Fonction de gestion des entrées
 void processInput(GLFWwindow *window) {
-    // Modifier la gestion de la touche Escape
     if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
         cursor_locked = !cursor_locked;
+        camera_enabled = !camera_enabled;
         glfwSetInputMode(window, GLFW_CURSOR, 
             cursor_locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-        // Attendre un peu pour éviter le rebond
         glfwWaitEvents();
     }
 
-    // Ne traiter les inputs de caméra que si le curseur est verrouillé
-    if (!cursor_locked || ImGui::GetIO().WantCaptureMouse) {
+    // Ne traiter les inputs de caméra que si le curseur est verrouillé ET la caméra est activée
+    if (!cursor_locked || !camera_enabled || ImGui::GetIO().WantCaptureMouse) {
         return;
     }
 
@@ -263,102 +245,8 @@ bool Initialise()
 	g_BasicShader.LoadFragmentShader("Basic.fs");
 	g_BasicShader.Create();
 
-	// Texture loading
-	int texWidth, texHeight, texChannels;
-	unsigned char* data = stbi_load("dragon.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	if (data) {
-		std::cout << "Texture chargée avec succès : " << texWidth << "x" << texHeight 
-				  << " (" << texChannels << " canaux)" << std::endl;
-				  
-		glGenTextures(1, &textureID);
-		glBindTexture(GL_TEXTURE_2D, textureID);
-
-		// Configuration basique
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);	
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-		// Upload des données dans OpenGL
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-		glGenerateMipmap(GL_TEXTURE_2D);
-
-		stbi_image_free(data);
-		glBindTexture(GL_TEXTURE_2D, 0); // unbind proprement
-	} else {
-		std::cerr << "Erreur : impossible de charger la texture PNG\n";
-		std::cerr << "Erreur stbi : " << stbi_failure_reason() << std::endl;
-		std::cerr << "Chemin tenté : " << std::filesystem::absolute("dragon.png").string() << std::endl;
-	}
-
-	// Configuration des buffers
-	glGenVertexArrays(1, &VAO);
-	glBindVertexArray(VAO);
-	
-	// Configuration du VBO
-	glGenBuffers(1, &VBO);
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(DragonVertices), DragonVertices, GL_STATIC_DRAW);
-	
-	// Configuration de l'IBO
-	glGenBuffers(1, &IBO);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(DragonIndices), DragonIndices, GL_STATIC_DRAW);
-
-	// Configuration des attributs
-	GLuint program = g_BasicShader.GetProgram();
-	glUseProgram(program);
-
-	int loc_position = glGetAttribLocation(program, "a_position");
-	int loc_normal = glGetAttribLocation(program, "a_normal");
-	int loc_uv = glGetAttribLocation(program, "a_uv");
-
-	glVertexAttribPointer(loc_position, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
-	glEnableVertexAttribArray(loc_position);
-	glVertexAttribPointer(loc_normal, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-	glEnableVertexAttribArray(loc_normal);
-	glVertexAttribPointer(loc_uv, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-	glEnableVertexAttribArray(loc_uv);
-
-	// Création du soleil
-	sun = new Mesh();
-	sun->createSphere(1.0f, 32, 32);
-	sun->setScale(5.0f, 5.0f, 5.0f);  // Soleil plus grand
-	sun->setPosition(0.0f, 10.0f, -15.0f);  // Position ajustée pour être visible
-
-	// Définir le matériau du soleil pour qu'il soit émissif
-	Material sunMaterial;
-	sunMaterial.diffuse[0] = 1.0f;    // Blanc pour permettre à la texture d'apparaître
-	sunMaterial.diffuse[1] = 1.0f;     
-	sunMaterial.diffuse[2] = 1.0f;     
-	sunMaterial.specular[0] = 0.0f;    
-	sunMaterial.specular[1] = 0.0f;
-	sunMaterial.specular[2] = 0.0f;
-	sunMaterial.shininess = 0.0f;
-	sunMaterial.isEmissive = true;
-	sun->setMaterial(sunMaterial);
-
-	// Charger la texture du soleil avant de l'ajouter aux objets de la scène
-	if (!sun->loadTexture("models/sun.png")) {
-		std::cerr << "Erreur : impossible de charger la texture du soleil" << std::endl;
-	}
-
-	sceneObjects.push_back(sun);
-
-	// Remplacer la création manuelle du dragon par le chargement du fichier OBJ
-	// Mesh* dragon = new Mesh();
-	// if (!dragon->loadFromOBJFile("models/dragon.obj")) {
-	// 	std::cerr << "Erreur : impossible de charger le modèle dragon.obj\n";
-	// 	delete dragon;
-	// 	return false;
-	// }
-	// dragon->setScale(0.5f, 0.5f, 0.5f);
-	// dragon->setPosition(0.0f, 0.0f, 0.0f);
-	// sceneObjects.push_back(dragon);
-
-	// Création des planètes
-	createPlanets();
-	loadPlanetTextures();
+	// Création du soleil et des planètes
+	initializeSolarSystem();
 
 	// Configuration d'ImGui avec une plus grande taille de police
 	IMGUI_CHECKVERSION();
@@ -387,76 +275,102 @@ bool Initialise()
 	ImGui_ImplGlfw_InitForOpenGL(g_Window, true);
 	ImGui_ImplOpenGL3_Init("#version 130");
 
-	// Création du skybox
-	float skyboxVertices[] = {
-		-1.0f,  1.0f, -1.0f,
-		-1.0f, -1.0f, -1.0f,
-		 1.0f, -1.0f, -1.0f,
-		 1.0f, -1.0f, -1.0f,
-		 1.0f,  1.0f, -1.0f,
-		-1.0f,  1.0f, -1.0f,
-
-		-1.0f, -1.0f,  1.0f,
-		-1.0f, -1.0f, -1.0f,
-		-1.0f,  1.0f, -1.0f,
-		-1.0f,  1.0f, -1.0f,
-		-1.0f,  1.0f,  1.0f,
-		-1.0f, -1.0f,  1.0f,
-
-		 1.0f, -1.0f, -1.0f,
-		 1.0f, -1.0f,  1.0f,
-		 1.0f,  1.0f,  1.0f,
-		 1.0f,  1.0f,  1.0f,
-		 1.0f,  1.0f, -1.0f,
-		 1.0f, -1.0f, -1.0f,
-
-		-1.0f, -1.0f,  1.0f,
-		-1.0f,  1.0f,  1.0f,
-		 1.0f,  1.0f,  1.0f,
-		 1.0f,  1.0f,  1.0f,
-		 1.0f, -1.0f,  1.0f,
-		-1.0f, -1.0f,  1.0f,
-
-		-1.0f,  1.0f, -1.0f,
-		 1.0f,  1.0f, -1.0f,
-		 1.0f,  1.0f,  1.0f,
-		 1.0f,  1.0f,  1.0f,
-		-1.0f,  1.0f,  1.0f,
-		-1.0f,  1.0f, -1.0f,
-
-		-1.0f, -1.0f, -1.0f,
-		-1.0f, -1.0f,  1.0f,
-		 1.0f, -1.0f, -1.0f,
-		 1.0f, -1.0f, -1.0f,
-		-1.0f, -1.0f,  1.0f,
-		 1.0f, -1.0f,  1.0f
-	};
-
-	glGenVertexArrays(1, &skyboxVAO);
-	glGenBuffers(1, &skyboxVBO);
-	glBindVertexArray(skyboxVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-
-	// Charger la texture de l'espace
-	int spaceTexWidth, spaceTexHeight, spaceTexChannels;
-	unsigned char* spaceData = stbi_load("space.png", &spaceTexWidth, &spaceTexHeight, &spaceTexChannels, STBI_rgb_alpha);
-	if (spaceData) {
-		glGenTextures(1, &skyboxTexture);
-		glBindTexture(GL_TEXTURE_2D, skyboxTexture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, spaceTexWidth, spaceTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, spaceData);
-		glGenerateMipmap(GL_TEXTURE_2D);
-		stbi_image_free(spaceData);
-	}
-
-	// Charger les shaders du skybox
-	g_SkyboxShader.LoadVertexShader("Skybox.vs");
-	g_SkyboxShader.LoadFragmentShader("Skybox.fs");
-	g_SkyboxShader.Create();
+	// Création de la skybox
+	createSkybox();
 
 	return true;
+}
+
+void createSkybox() {
+    float skyboxVertices[] = {
+        -1000.0f,  1000.0f, -1000.0f,
+        -1000.0f, -1000.0f, -1000.0f,
+         1000.0f, -1000.0f, -1000.0f,
+         1000.0f, -1000.0f, -1000.0f,
+         1000.0f,  1000.0f, -1000.0f,
+        -1000.0f,  1000.0f, -1000.0f,
+
+        -1000.0f, -1000.0f,  1000.0f,
+        -1000.0f, -1000.0f, -1000.0f,
+        -1000.0f,  1000.0f, -1000.0f,
+        -1000.0f,  1000.0f, -1000.0f,
+        -1000.0f,  1000.0f,  1000.0f,
+        -1000.0f, -1000.0f,  1000.0f,
+
+         1000.0f, -1000.0f, -1000.0f,
+         1000.0f, -1000.0f,  1000.0f,
+         1000.0f,  1000.0f,  1000.0f,
+         1000.0f,  1000.0f,  1000.0f,
+         1000.0f,  1000.0f, -1000.0f,
+         1000.0f, -1000.0f, -1000.0f,
+
+        -1000.0f, -1000.0f,  1000.0f,
+        -1000.0f,  1000.0f,  1000.0f,
+         1000.0f,  1000.0f,  1000.0f,
+         1000.0f,  1000.0f,  1000.0f,
+         1000.0f, -1000.0f,  1000.0f,
+        -1000.0f, -1000.0f,  1000.0f,
+
+        -1000.0f,  1000.0f, -1000.0f,
+         1000.0f,  1000.0f, -1000.0f,
+         1000.0f,  1000.0f,  1000.0f,
+         1000.0f,  1000.0f,  1000.0f,
+        -1000.0f,  1000.0f,  1000.0f,
+        -1000.0f,  1000.0f, -1000.0f,
+
+        -1000.0f, -1000.0f, -1000.0f,
+        -1000.0f, -1000.0f,  1000.0f,
+         1000.0f, -1000.0f, -1000.0f,
+         1000.0f, -1000.0f, -1000.0f,
+        -1000.0f, -1000.0f,  1000.0f,
+         1000.0f, -1000.0f,  1000.0f
+    };
+
+    glGenVertexArrays(1, &skyboxVAO);
+    glGenBuffers(1, &skyboxVBO);
+    glBindVertexArray(skyboxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+    // Charger la texture de l'espace
+    int spaceTexWidth, spaceTexHeight, spaceTexChannels;
+    unsigned char* spaceData = stbi_load("space.png", &spaceTexWidth, &spaceTexHeight, &spaceTexChannels, STBI_rgb_alpha);
+    if (spaceData) {
+        glGenTextures(1, &skyboxTexture);
+        glBindTexture(GL_TEXTURE_2D, skyboxTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, spaceTexWidth, spaceTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, spaceData);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        stbi_image_free(spaceData);
+    }
+
+    // Charger les shaders du skybox
+    g_SkyboxShader.LoadVertexShader("Skybox.vs");
+    g_SkyboxShader.LoadFragmentShader("Skybox.fs");
+    g_SkyboxShader.Create();
+}
+
+void initializeSolarSystem() {
+    // Création du soleil
+    sun = new Mesh();
+    sun->createSphere(1.0f, 32, 32);
+    sun->setScale(5.0f, 5.0f, 5.0f);
+    sun->setPosition(0.0f, 10.0f, -15.0f);
+
+    Material sunMaterial;
+    sunMaterial.diffuse[0] = sunMaterial.diffuse[1] = sunMaterial.diffuse[2] = 1.0f;
+    sunMaterial.specular[0] = sunMaterial.specular[1] = sunMaterial.specular[2] = 0.0f;
+    sunMaterial.shininess = 0.0f;
+    sunMaterial.isEmissive = true;
+    sun->setMaterial(sunMaterial);
+    sun->loadTexture("models/sun.png");
+    
+    sceneObjects.push_back(sun);
+
+    // Création et initialisation des planètes
+    createPlanets();
+    loadPlanetTextures();
 }
 
 void createPlanets() {
@@ -553,9 +467,6 @@ void updatePlanets() {
 void Terminate()
 {
 	g_BasicShader.Destroy();
-	glDeleteBuffers(1, &VBO);
-	glDeleteBuffers(1, &IBO);
-	glDeleteVertexArrays(1, &VAO);
 
 	// Nettoyer les objets de la scène
 	for(Mesh* obj : sceneObjects) {
@@ -581,6 +492,106 @@ void Terminate()
 	}
 }
 
+void RenderImGuiObjectControls() {
+    if (!show_debug_window) return;
+
+    if (ImGui::CollapsingHeader("Object Controls")) {
+        // File browser pour les modèles
+        ImGui::InputText("Selected OBJ", selected_file, sizeof(selected_file));
+        if (ImGui::Button("Browse OBJ")) {
+            // Ouvrir un dialogue de fichier natif
+            OPENFILENAMEA ofn;
+            char szFile[260] = { 0 };
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = nullptr;
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = "OBJ Files\0*.obj\0";
+            ofn.nFilterIndex = 1;
+            ofn.lpstrFileTitle = nullptr;
+            ofn.nMaxFileTitle = 0;
+            ofn.lpstrInitialDir = nullptr;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+            if (GetOpenFileNameA(&ofn)) {
+                strcpy(selected_file, szFile);
+            }
+        }
+
+        // File browser pour les textures
+        ImGui::InputText("Selected Texture", selected_texture, sizeof(selected_texture));
+        if (ImGui::Button("Browse Texture")) {
+            OPENFILENAMEA ofn;
+            char szFile[260] = { 0 };
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = nullptr;
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = "PNG Files\0*.png\0";
+            ofn.nFilterIndex = 1;
+            ofn.lpstrFileTitle = nullptr;
+            ofn.nMaxFileTitle = 0;
+            ofn.lpstrInitialDir = nullptr;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+            if (GetOpenFileNameA(&ofn)) {
+                strcpy(selected_texture, szFile);
+            }
+        }
+
+        // Bouton pour charger le modèle et sa texture
+        if (ImGui::Button("Load Model with Texture")) {
+            if (strlen(selected_file) > 0) {
+                Mesh* new_model = new Mesh();
+                if (new_model->loadFromOBJFile(selected_file)) {
+                    if (strlen(selected_texture) > 0) {
+                        new_model->loadTexture(selected_texture);
+                    }
+                    sceneObjects.push_back(new_model);
+                } else {
+                    delete new_model;
+                    ImGui::OpenPopup("Error");
+                }
+            }
+        }
+
+        // Liste des objets avec contrôles de transformation
+        for (size_t i = 0; i < sceneObjects.size(); i++) {
+            char label[32];
+            sprintf(label, "Object %zu", i);
+            if (ImGui::TreeNode(label)) {
+                Mesh* obj = sceneObjects[i];
+                
+                // Position
+                float pos[3];
+                memcpy(pos, obj->getPosition(), sizeof(float) * 3);
+                if (ImGui::DragFloat3("Position", pos, 0.1f)) {
+                    obj->setPosition(pos[0], pos[1], pos[2]);
+                }
+                
+                // Rotation
+                static float rotation[3] = {0, 0, 0};
+                if (ImGui::DragFloat3("Rotation", rotation, 0.1f)) {
+                    Mat4 rotMatrix = Mat4::rotate(rotation[0], 1, 0, 0) *
+                                   Mat4::rotate(rotation[1], 0, 1, 0) *
+                                   Mat4::rotate(rotation[2], 0, 0, 1);
+                    obj->setRotation(rotMatrix);
+                }
+                
+                // Scale
+                float scale[3] = {1, 1, 1}; // Vous devrez ajouter une façon de stocker/récupérer l'échelle
+                if (ImGui::DragFloat3("Scale", scale, 0.1f, 0.1f, 10.0f)) {
+                    obj->setScale(scale[0], scale[1], scale[2]);
+                }
+
+                ImGui::TreePop();
+            }
+        }
+    }
+}
+
 void Render()
 {
 	// Calcul du FPS
@@ -599,14 +610,6 @@ void Render()
 
 	auto basicProgram = g_BasicShader.GetProgram();
 	glUseProgram(basicProgram);
-
-	// Combine matrices into one transformation matrix
-	Mat4 scaleMatrix = Mat4::scale(scale[0], scale[1], scale[2]);
-	Mat4 rotationMatrix = Mat4::rotate(radians, 0.0f, 0.0f, 1.0f);
-	Mat4 translationMatrix = Mat4::translate(translation[12], translation[13], translation[14]);
-	Mat4 transformMatrix = translationMatrix * rotationMatrix * scaleMatrix;
-	GLint loc_transform = glGetUniformLocation(basicProgram, "u_transform");
-	glUniformMatrix4fv(loc_transform, 1, GL_FALSE, transformMatrix.data());
 
 	// Create and pass the perspective projection matrix.
 	Mat4 projectionMatrix = Mat4::perspective(fov, (float)width / height, cam_near, cam_far);
@@ -697,12 +700,6 @@ void Render()
 	GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
 	glUniform1i(loc_isEmissive, 0);
 
-	// Récupération du buffer VAO
-	glBindVertexArray(VAO);
-
-	// dessin
-	glDrawElements(GL_TRIANGLES,  _countof(DragonIndices), GL_UNSIGNED_SHORT, 0);
-
 	// Mise à jour des planètes
 	updatePlanets();
 
@@ -712,10 +709,7 @@ void Render()
             Material sunMat = obj->getMaterial();
             sunMat.isEmissive = true;
             obj->setMaterial(sunMat);
-            
-            // S'assurer que le soleil n'utilise pas de texture
-            // glActiveTexture(GL_TEXTURE0);
-            // glBindTexture(GL_TEXTURE_2D, 0);
+			
         }
         
         // Chaque objet va gérer sa propre texture dans sa méthode draw()
@@ -792,7 +786,7 @@ void Render()
 
 		// Ajout de debug pour la texture dans l'interface ImGui
 		if (ImGui::CollapsingHeader("Texture Debug")) {
-			ImGui::Text("Texture ID: %d", textureID);
+			ImGui::Text("Texture ID: %d", skyboxTexture);
 			
 			// Afficher les IDs des textures des planètes
 			for (size_t i = 0; i < planets.size(); i++) {
@@ -806,6 +800,8 @@ void Render()
 			GLint loc_ambient = glGetUniformLocation(basicProgram, "u_ambient_strength");
 			glUniform1f(loc_ambient, ambientStrength);
 		}
+
+		RenderImGuiObjectControls();
 
 		ImGui::End();
 	}
