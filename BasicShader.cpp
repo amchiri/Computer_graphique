@@ -93,10 +93,17 @@ void createSkybox();
 
 // Fonction de callback pour la souris
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+    if (!camera_enabled || !cursor_locked) {
+        lastX = xpos;
+        lastY = ypos;
+        return;
+    }
+
     if (firstMouse) {
         lastX = xpos;
         lastY = ypos;
         firstMouse = false;
+        return;
     }
 
     float xoffset = xpos - lastX;
