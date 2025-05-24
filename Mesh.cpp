@@ -34,16 +34,17 @@ bool Mesh::loadTexture(const char* filename) {
 
     glGenTextures(1, &material.diffuseMap);
     glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
-    
-    // Configuration détaillée de la texture
+
+    // Utilise GL_SRGB8_ALPHA8 pour les textures couleur (sRGB aware)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+
     glGenerateMipmap(GL_TEXTURE_2D);
-    
+
     stbi_image_free(data);
     glBindTexture(GL_TEXTURE_2D, 0);  // Unbind la texture
     

@@ -305,6 +305,9 @@ bool Initialise()
 	// Création de la skybox
 	createSkybox();
 
+    // Active le framebuffer sRGB pour tout le projet (avant toute création d'objet OpenGL)
+    glEnable(GL_FRAMEBUFFER_SRGB);
+
 	return true;
 }
 
@@ -367,7 +370,7 @@ void createSkybox() {
     if (spaceData) {
         glGenTextures(1, &skyboxTexture);
         glBindTexture(GL_TEXTURE_2D, skyboxTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, spaceTexWidth, spaceTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, spaceData);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8 , spaceTexWidth, spaceTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, spaceData);
         glGenerateMipmap(GL_TEXTURE_2D);
         stbi_image_free(spaceData);
     }
@@ -930,8 +933,14 @@ void Render()
 		ImGui::End();
 	}
 
+	// Juste avant ImGui, désactive sRGB pour éviter la double correction gamma sur l'UI
+	glDisable(GL_FRAMEBUFFER_SRGB);
+
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    // Réactive sRGB pour la prochaine frame (optionnel, sécurité)
+    glEnable(GL_FRAMEBUFFER_SRGB);
 }
 
 int main()
