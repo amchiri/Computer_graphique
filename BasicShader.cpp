@@ -1,9 +1,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
 
-#include <GL/glew.h>
+#include <GL/glew.h> // GLEW doit être inclus en premier
 #include <GLFW/glfw3.h>
-#include <GL/gl.h>
+
 #include <algorithm>  // Ajouter cette ligne pour std::find_if
 
 #include <iostream>
@@ -12,7 +12,6 @@
 #include <string>
 #include <filesystem>
 #include "GLShader.h"
-#include "dragonData.h"
 #include "Mesh.h"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -24,6 +23,10 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <map>
+#include "UI.h"
+
+// Déclaration globale de l'interface utilisateur
+std::unique_ptr<UI> g_UI;
 
 // Skybox variables
 GLuint skyboxVAO, skyboxVBO;
@@ -66,7 +69,6 @@ float fps = 0.0f;
 bool wireframe_mode = false;
 bool show_debug_window = true;
 bool cursor_locked = true;
-char obj_path[256] = "models/dragon.obj";
 float elapsed_time = 0.0f;
 float last_frame_time = 0.0f;
 
@@ -75,16 +77,6 @@ bool camera_enabled = true;
 char selected_file[256] = "";
 char selected_texture[256] = "";
 int selected_object = -1;
-
-// Structure pour les planètes
-struct Planet {
-    Mesh* mesh;
-    float orbitRadius;
-    float rotationSpeed;
-    float selfRotation;
-    float size;
-    GLuint texture;
-};
 
 std::vector<Planet> planets;
 
@@ -232,10 +224,10 @@ void loadPlanetTextures() {
             
             // Charger la texture
             if (planet.mesh->loadTexture(tab[i])) {
-                std::cout << "Texture earth.png chargée avec succès pour la planète " << i << std::endl;
+                std::cout << "Texture loaded successfully for planet " << i << std::endl;
                 planet.texture = planet.mesh->getMaterial().diffuseMap;
             } else {
-                std::cerr << "Erreur : impossible de charger earth.png pour la planète " << i << std::endl;
+                std::cerr << "Error: Could not load texture for planet " << i << std::endl;
             }
         }
     }
@@ -284,6 +276,9 @@ bool Initialise()
     g_EnvMapShader.LoadFragmentShader("EnvMap.fs");
     g_EnvMapShader.Create();
 
+    // Création de la skybox avant l'UI
+    createSkybox();  // Déplacer cette ligne ici
+
 	// Création du soleil et des planètes
 	initializeSolarSystem();
     createDemoObjects();
@@ -291,38 +286,11 @@ bool Initialise()
 	// Ajuster la caméra pour mieux voir le système solaire
 	AdjustInitialCamera();
 
-	// Configuration d'ImGui avec une plus grande taille de police
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	io.FontGlobalScale = 1.5f; // Augmente la taille globale des éléments ImGui
-    
-    // Style personnalisé pour ImGui
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowPadding = ImVec2(15, 15);
-    style.FramePadding = ImVec2(5, 5);
-    style.ItemSpacing = ImVec2(12, 8);
-    style.ItemInnerSpacing = ImVec2(8, 6);
-    style.WindowRounding = 12.0f;
-    style.FrameRounding = 5.0f;
-    style.PopupRounding = 10.0f;
-    style.ScrollbarRounding = 10.0f;
-    style.GrabRounding = 5.0f;
-    
-    // Augmenter la taille des widgets
-    style.ScrollbarSize = 18;
-    style.GrabMinSize = 20;
-    style.WindowTitleAlign = ImVec2(0.5f, 0.5f);  // Centre les titres des fenêtres
-
-	ImGui::StyleColorsDark();
-	ImGui_ImplGlfw_InitForOpenGL(g_Window, true);
-	ImGui_ImplOpenGL3_Init("#version 130");
-
-	// Création de la skybox
-	createSkybox();
-
-    // Active le framebuffer sRGB pour tout le projet (avant toute création d'objet OpenGL)
-    glEnable(GL_FRAMEBUFFER_SRGB);
+    // Create the UI instance and initialize it
+    g_UI = std::make_unique<UI>(g_Window, width, height);
+    g_UI->Initialize();
+    g_UI->SetSceneObjects(sceneObjects, sun, planets);
+    g_UI->SetShaders(&g_BasicShader, &g_ColorShader, &g_EnvMapShader);
 
 	return true;
 }
@@ -537,11 +505,6 @@ void Terminate()
 	}
 	sceneObjects.clear();
 
-	// Cleanup ImGui
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
-
 	// Cleanup Skybox
 	glDeleteVertexArrays(1, &skyboxVAO);
 	glDeleteBuffers(1, &skyboxVBO);
@@ -553,278 +516,8 @@ void Terminate()
 			glDeleteTextures(1, &planet.texture);
 		}
 	}
-}
 
-void RenderImGuiObjectControls() {
-    if (!show_debug_window) return;
-
-    if (ImGui::CollapsingHeader("Scene Objects")) {
-        // Le Soleil
-        if (ImGui::TreeNode("Sun")) {
-            ObjectTransform& transform = objectTransforms[sun];
-            
-            if (ImGui::DragFloat3("Position", transform.position, 0.1f)) {
-                sun->setPosition(transform.position[0], transform.position[1], transform.position[2]);
-            }
-            
-            if (ImGui::DragFloat3("Scale", transform.scale, 0.1f, 0.1f, 100.0f)) {
-                sun->setScale(transform.scale[0], transform.scale[1], transform.scale[2]);
-            }
-            
-            if (ImGui::DragFloat3("Rotation", transform.rotation, 0.1f)) {
-                Mat4 rotMatrix = Mat4::rotate(transform.rotation[0], 1, 0, 0) *
-                               Mat4::rotate(transform.rotation[1], 0, 1, 0) *
-                               Mat4::rotate(transform.rotation[2], 0, 0, 1);
-                sun->setRotation(rotMatrix);
-            }
-            
-            ImGui::TreePop();
-        }
-        
-        // Les Planètes
-        if (ImGui::TreeNode("Planets")) {
-            for (size_t i = 0; i < planets.size(); i++) {
-                char label[32];
-                sprintf(label, "Planet %zu", i);
-                
-                if (ImGui::TreeNode(label)) {
-                    Planet& planet = planets[i];
-                    ObjectTransform& transform = objectTransforms[planet.mesh];
-                    
-                    if (ImGui::DragFloat("Orbit Radius", &planet.orbitRadius, 0.1f, 1.0f, 200.0f)) {
-                        // La mise à jour de la position sera faite dans updatePlanets
-                    }
-                    
-                    if (ImGui::DragFloat("Size", &planet.size, 0.1f, 0.1f, 100.0f)) {
-                        transform.scale[0] = transform.scale[1] = transform.scale[2] = planet.size;
-                    }
-                    
-                    if (ImGui::DragFloat("Orbital Speed", &planet.rotationSpeed, 0.01f, 0.0f, 2.0f)) {
-                        // La vitesse de rotation sera utilisée dans updatePlanets
-                    }
-                    
-                    ImGui::Text("Current Position: %.2f, %.2f, %.2f",
-                        transform.position[0], transform.position[1], transform.position[2]);
-                    
-                    ImGui::TreePop();
-                }
-            }
-            ImGui::TreePop();
-        }
-
-        // Objets chargés dynamiquement
-        if (ImGui::TreeNode("Custom Objects")) {
-            for (size_t i = 0; i < sceneObjects.size(); i++) {
-                // Skip sun and planets
-                if (sceneObjects[i] == sun || std::find_if(planets.begin(), planets.end(),
-                    [&](const Planet& p) { return p.mesh == sceneObjects[i]; }) != planets.end()) {
-                    continue;
-                }
-
-                char label[32];
-                sprintf(label, "Object %zu", i);
-                
-                if (ImGui::TreeNode(label)) {
-                    ObjectTransform& transform = objectTransforms[sceneObjects[i]];
-                    
-                    if (ImGui::DragFloat3("Position", transform.position, 0.1f)) {
-                        sceneObjects[i]->setPosition(transform.position[0], transform.position[1], transform.position[2]);
-                    }
-                    
-                    if (ImGui::DragFloat3("Scale", transform.scale, 0.1f, 0.1f, 100.0f)) {
-                        sceneObjects[i]->setScale(transform.scale[0], transform.scale[1], transform.scale[2]);
-                    }
-                    
-                    if (ImGui::DragFloat3("Rotation", transform.rotation, 0.1f)) {
-                        Mat4 rotMatrix = Mat4::rotate(transform.rotation[0], 1, 0, 0) *
-                                       Mat4::rotate(transform.rotation[1], 0, 1, 0) *
-                                       Mat4::rotate(transform.rotation[2], 0, 0, 1);
-                        sceneObjects[i]->setRotation(rotMatrix);
-                    }
-
-                    // Option pour supprimer l'objet
-                    if (ImGui::Button("Delete Object")) {
-                        objectTransforms.erase(sceneObjects[i]);
-                        delete sceneObjects[i];
-                        sceneObjects.erase(sceneObjects.begin() + i);
-                        ImGui::TreePop();
-                        break;
-                    }
-                    
-                    ImGui::TreePop();
-                }
-            }
-            ImGui::TreePop();
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Model Loader")) {
-        if (ImGui::Button("Load 3D Model")) {
-            std::string filepath = OpenFileDialog();
-            if (!filepath.empty()) {
-                if (!LoadModelWithTexture(filepath)) {
-                    ImGui::OpenPopup("Error Loading Model");
-                }
-            }
-        }
-        
-        ImGui::SameLine();
-        if (ImGui::Button("Load Texture")) {
-            if (selected_object >= 0 && selected_object < sceneObjects.size()) {
-                std::string texturePath = OpenFileDialog("Image files\0*.png;*.jpg;*.jpeg\0All files\0*.*\0");
-                if (!texturePath.empty()) {
-                    sceneObjects[selected_object]->loadTexture(texturePath.c_str());
-                }
-            }
-        }
-
-        // Liste des objets chargés
-        ImGui::Text("Loaded Objects:");
-        for (size_t i = 0; i < sceneObjects.size(); i++) {
-            char label[32];
-            sprintf(label, "Object %zu", i);
-            bool is_selected = (selected_object == i);
-            if (ImGui::Selectable(label, is_selected)) {
-                selected_object = i;
-            }
-        }
-        
-        if (ImGui::BeginPopupModal("Error Loading Model", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Failed to load the model!");
-            if (ImGui::Button("OK")) {
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
-        }
-    }
-}
-
-// Déplacer les implémentations des fonctions OpenFileDialog et LoadModelWithTexture ici,
-// avant leur utilisation dans RenderImGuiObjectControls
-std::string OpenFileDialog(const char* filter) {
-    char filename[MAX_PATH];
-    filename[0] = '\0';
-
-    OPENFILENAMEA ofn;
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = NULL;
-    ofn.lpstrFilter = filter;
-    ofn.lpstrFile = filename;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-    ofn.lpstrDefExt = "";
-
-    if (GetOpenFileNameA(&ofn))
-        return filename;
-    return "";
-}
-
-bool LoadModelWithTexture(const std::string& modelPath) {
-    Mesh* new_model = new Mesh();
-    if (!new_model->loadFromOBJFile(modelPath.c_str())) {
-        delete new_model;
-        return false;
-    }
-
-    // Chercher une texture avec le même nom que le modèle
-    std::string basePath = modelPath.substr(0, modelPath.find_last_of("."));
-    std::string texturePath = basePath + ".png"; // Essayer d'abord PNG
-    
-    if (!std::filesystem::exists(texturePath)) {
-        texturePath = basePath + ".jpg"; // Essayer ensuite JPG
-    }
-
-    if (std::filesystem::exists(texturePath)) {
-        new_model->loadTexture(texturePath.c_str());
-    }
-
-    new_model->setScale(0.5f, 0.5f, 0.5f);
-    sceneObjects.push_back(new_model);
-    
-    // Initialiser les transformations
-    ObjectTransform transform;
-    objectTransforms[new_model] = transform;
-    
-    return true;
-}
-
-void createDemoObjects() {
-    // Cube couleur simple
-    Mesh* colorCube = new Mesh();
-    colorCube->loadFromOBJFile("models/cube.obj");
-    Material matColor;
-    matColor.diffuse[0] = 0.2f; matColor.diffuse[1] = 0.8f; matColor.diffuse[2] = 0.2f;
-    matColor.specular[0] = matColor.specular[1] = matColor.specular[2] = 0.0f;
-    matColor.shininess = 1.0f;
-    matColor.isEmissive = false;
-    colorCube->setMaterial(matColor);
-    colorCube->setPosition(-20, 5, 0);
-    sceneObjects.push_back(colorCube);
-    objectShaders[colorCube] = &g_ColorShader;
-
-    // Cube texturé
-    Mesh* texCube = new Mesh();
-    texCube->loadFromOBJFile("models/cube.obj");
-    texCube->loadTexture("models/earth.png");
-    Material matTex;
-    matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
-    matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;
-    matTex.shininess = 16.0f;
-    matTex.isEmissive = false;
-    texCube->setMaterial(matTex);
-    texCube->setPosition(0, 5, 0);
-    sceneObjects.push_back(texCube);
-    objectShaders[texCube] = &g_BasicShader;
-
-    // Cube envmap
-    Mesh* envCube = new Mesh();
-    envCube->loadFromOBJFile("models/cube.obj");
-    Material matEnv;
-    matEnv.diffuse[0] = matEnv.diffuse[1] = matEnv.diffuse[2] = 1.0f;
-    matEnv.specular[0] = matEnv.specular[1] = matEnv.specular[2] = 1.0f;
-    matEnv.shininess = 64.0f;
-    matEnv.isEmissive = false;
-    envCube->setMaterial(matEnv);
-    envCube->setPosition(20, 5, 0);
-    sceneObjects.push_back(envCube);
-    objectShaders[envCube] = &g_EnvMapShader;
-}
-
-void RenderImGuiShaderSettings() {
-    if (ImGui::CollapsingHeader("Shader Settings")) {
-        static int selected_object = -1;
-        ImGui::Text("Select an object and assign a shader:");
-        for (size_t i = 0; i < sceneObjects.size(); ++i) {
-            char label[32];
-            sprintf(label, "Object %zu", i);
-            if (ImGui::Selectable(label, selected_object == (int)i)) {
-                selected_object = (int)i;
-            }
-        }
-        if (selected_object >= 0 && selected_object < (int)sceneObjects.size()) {
-            Mesh* obj = sceneObjects[selected_object];
-            GLShader* currentShader = objectShaders[obj];
-            if (!currentShader) currentShader = &g_BasicShader;
-            bool isColor = (currentShader == &g_ColorShader);
-            bool isBasic = (currentShader == &g_BasicShader);
-            bool isEnvMap = (currentShader == &g_EnvMapShader);
-
-            if (ImGui::RadioButton("Couleur simple", isColor)) objectShaders[obj] = &g_ColorShader;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Texture", isBasic)) objectShaders[obj] = &g_BasicShader;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Env. map", isEnvMap)) objectShaders[obj] = &g_EnvMapShader;
-
-            // Permet de changer la couleur si shader couleur simple
-            if (objectShaders[obj] == &g_ColorShader) {
-                Material mat = obj->getMaterial();
-                if (ImGui::ColorEdit3("Couleur", mat.diffuse)) {
-                    obj->setMaterial(mat);
-                }
-            }
-        }
-    }
+    g_UI.reset();
 }
 
 void Render()
@@ -858,10 +551,10 @@ void Render()
 	// Rendu des objets avec leur shader sélectionné
 	for (Mesh* obj : sceneObjects) {
 		// Déterminer quel shader utiliser
-		GLShader* shader = &g_BasicShader;
-		auto it = objectShaders.find(obj);
-		if (it != objectShaders.end() && it->second) {
-			shader = it->second;
+		GLShader* shader = obj->getCurrentShader();
+		if (!shader) {
+			shader = &g_BasicShader; // Shader par défaut
+			obj->setCurrentShader(shader);
 		}
 
 		GLuint program = shader->GetProgram();
@@ -974,76 +667,52 @@ void Render()
 	// Réinitialiser les états OpenGL pour le rendu normal
 	glDepthFunc(GL_LESS);
 
-	// Début du rendu ImGui
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplGlfw_NewFrame();
-	ImGui::NewFrame();
+	// Remplacer tout le code ImGui par:
+    glDisable(GL_FRAMEBUFFER_SRGB);
+    g_UI->RenderUI(fps, camera.position, camera.front);
+    glEnable(GL_FRAMEBUFFER_SRGB);
+}
 
-	// Ajuster la taille des fenêtres ImGui en fonction de la taille de la fenêtre
-	ImGui::SetNextWindowSize(ImVec2(width * 0.3f, height * 0.7f), ImGuiCond_FirstUseEver);
-	if (show_debug_window) {
-		ImGui::Begin("Debug", &show_debug_window, ImGuiWindowFlags_NoCollapse);
-		ImGui::Text("FPS: %.1f", fps);
-		ImGui::Text("Camera Position: (%.1f, %.1f, %.1f)", 
-			camera.position[0], camera.position[1], camera.position[2]);
-		ImGui::Text("Camera Direction: (%.1f, %.1f, %.1f)", 
-			camera.front[0], camera.front[1], camera.front[2]);
+void createDemoObjects() {
+    // Cube couleur simple
+    Mesh* colorCube = new Mesh();
+    colorCube->createSphere(1.0f, 32, 32);  // ou créer un cube si vous avez la fonction
+    Material matColor;
+    matColor.diffuse[0] = 0.2f; matColor.diffuse[1] = 0.8f; matColor.diffuse[2] = 0.2f;
+    matColor.specular[0] = matColor.specular[1] = matColor.specular[2] = 0.0f;
+    matColor.shininess = 1.0f;
+    matColor.isEmissive = false;
+    colorCube->setMaterial(matColor);
+    colorCube->setPosition(-20, 5, 0);
+    sceneObjects.push_back(colorCube);
+    objectShaders[colorCube] = &g_ColorShader;
 
-		if (ImGui::Checkbox("Wireframe Mode", &wireframe_mode)) {
-			glPolygonMode(GL_FRONT_AND_BACK, wireframe_mode ? GL_LINE : GL_FILL);
-		}
+    // Cube texturé
+    Mesh* texCube = new Mesh();
+    texCube->createSphere(1.0f, 32, 32);  // ou créer un cube
+    texCube->loadTexture("models/earth.png");
+    Material matTex;
+    matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
+    matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;
+    matTex.shininess = 16.0f;
+    matTex.isEmissive = false;
+    texCube->setMaterial(matTex);
+    texCube->setPosition(0, 5, 0);
+    sceneObjects.push_back(texCube);
+    objectShaders[texCube] = &g_BasicShader;
 
-		// Contrôle des paramètres de lumière
-		if (ImGui::CollapsingHeader("Light Settings")) {
-			ImGui::ColorEdit3("Light Color", light_color);
-			ImGui::SliderFloat("Light Intensity", &light_intensity, 0.0f, 10.0f);
-
-			// Création d'une variable temporaire pour la position
-			float lightPos[3];
-			memcpy(lightPos, sun->getPosition(), 3 * sizeof(float));
-			if (ImGui::SliderFloat3("Light Position", lightPos, -50.0f, 50.0f)) {
-				sun->setPosition(lightPos[0], lightPos[1], lightPos[2]);
-			}
-		}
-
-		// Ajout de debug pour la texture dans l'interface ImGui
-		if (ImGui::CollapsingHeader("Texture Debug")) {
-			ImGui::Text("Texture ID: %d", skyboxTexture);
-			
-			// Afficher les IDs des textures des planètes
-			for (size_t i = 0; i < planets.size(); i++) {
-				ImGui::Text("Planet %zu Texture ID: %d", i, planets[i].mesh->getMaterial().diffuseMap);
-			}
-		}
-
-		// Contrôles d'éclairage simplifiés
-		static float ambientStrength = 0.3f;
-		if (ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f)) {
-			// Cette variable peut être utilisée dans le shader de base si nécessaire
-		}
-
-		RenderImGuiObjectControls();
-		RenderImGuiShaderSettings();
-
-		ImGui::End();
-	}
-
-	if (show_settings) {
-		ImGui::SetNextWindowSize(ImVec2(width * 0.25f, height * 0.3f), ImGuiCond_FirstUseEver);
-		ImGui::Begin("Light Settings", &show_settings, ImGuiWindowFlags_NoCollapse);
-		ImGui::ColorEdit3("Light Color", light_color);
-		ImGui::SliderFloat("Light Intensity", &light_intensity, 0.0f, 10.0f);
-		ImGui::End();
-	}
-
-	// Juste avant ImGui, désactive sRGB pour éviter la double correction gamma sur l'UI
-	glDisable(GL_FRAMEBUFFER_SRGB);
-
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-	// Réactive sRGB pour la prochaine frame (optionnel, sécurité)
-	glEnable(GL_FRAMEBUFFER_SRGB);
+    // Cube envmap
+    Mesh* envCube = new Mesh();
+    envCube->createSphere(1.0f, 32, 32);  // ou créer un cube
+    Material matEnv;
+    matEnv.diffuse[0] = matEnv.diffuse[1] = matEnv.diffuse[2] = 1.0f;
+    matEnv.specular[0] = matEnv.specular[1] = matEnv.specular[2] = 1.0f;
+    matEnv.shininess = 64.0f;
+    matEnv.isEmissive = false;
+    envCube->setMaterial(matEnv);
+    envCube->setPosition(20, 5, 0);
+    sceneObjects.push_back(envCube);
+    objectShaders[envCube] = &g_EnvMapShader;
 }
 
 int main()

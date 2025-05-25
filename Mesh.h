@@ -46,6 +46,10 @@ public:
     bool loadFromOBJFile(const char* filename);
     void draw(GLShader& shader);
 
+    const float* getScale() const { return scale; }
+    void setCurrentShader(GLShader* shader) { m_CurrentShader = shader; }
+    GLShader* getCurrentShader() const { return m_CurrentShader; }
+
 private:
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
@@ -56,6 +60,7 @@ private:
     Mat4 rotation; // Changement ici
     float scale[3] = {1.0f, 1.0f, 1.0f};
     Mat4 m_transform;  // Nouvelle matrice de transformation complète
+    GLShader* m_CurrentShader = nullptr;
     
     void setupMesh();
     // Supprime la déclaration privée de calculateModelMatrix ici !
