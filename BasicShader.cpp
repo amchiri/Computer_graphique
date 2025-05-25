@@ -26,6 +26,7 @@
 #include "UI.h"
 #include "Skybox.h" // Ajouter en haut du fichier
 #include "CameraController.h"
+#include "Planet.h" // Ajouter ici
 
 // Déclaration globale des variables
 std::unique_ptr<UI> g_UI;
@@ -404,92 +405,30 @@ void initializeSolarSystem() {
 
 void createPlanets() {
     // Paramètres des planètes: rayon orbital, vitesse orbitale, taille
-    float planetData[][4] = {
-        {15.0f, 0.8f, 0.8f},    // Mercure - plus proche, plus rapide
+    float planetData[][3] = {
+        {15.0f, 0.8f, 0.8f},    // Mercure
         {20.0f, 0.6f, 1.2f},    // Vénus
         {28.0f, 0.4f, 1.5f},    // Terre
         {35.0f, 0.3f, 1.2f},    // Mars
-        {50.0f, 0.15f, 4.0f},   // Jupiter - plus gros
+        {50.0f, 0.15f, 4.0f},   // Jupiter
         {65.0f, 0.12f, 3.5f},   // Saturne
         {80.0f, 0.08f, 2.5f},   // Uranus
     };
 
-    float time = glfwGetTime();
-
     for(int i = 0; i < 7; i++) {
-        Planet planet;
-        planet.mesh = new Mesh();
-        planet.mesh->createSphere(1.0f, 32, 32);
-        
-        // Initialisation des paramètres de la planète
-        planet.orbitRadius = planetData[i][0];
-        planet.rotationSpeed = planetData[i][1];
-        planet.size = planetData[i][2];
-        planet.selfRotation = 0.0f;
-
-        // Calculer la position initiale sur l'orbite
-        float angle = time * planet.rotationSpeed;
-        float x = cos(angle) * planet.orbitRadius;
-        float z = sin(angle) * planet.orbitRadius;
-
-        // Appliquer les transformations initiales
-        planet.mesh->setScale(planet.size, planet.size, planet.size);
-        planet.mesh->setPosition(x, 0.0f, z);
-        
-        // Configuration du matériau
-        Material planetMaterial;
-        planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
-        planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
-        planetMaterial.shininess = 32.0f;
-        planetMaterial.isEmissive = false;
-        planet.mesh->setMaterial(planetMaterial);
-
-        // Initialiser les transformations stockées
-        ObjectTransform& planetTransform = objectTransforms[planet.mesh];
-        planetTransform.position[0] = x;
-        planetTransform.position[1] = 0.0f;
-        planetTransform.position[2] = z;
-        planetTransform.scale[0] = planetTransform.scale[1] = planetTransform.scale[2] = planet.size;
-        planetTransform.rotation[0] = planetTransform.rotation[1] = planetTransform.rotation[2] = 0.0f;
-
-        planets.push_back(planet);
-        sceneObjects.push_back(planet.mesh);
+        planets.emplace_back();  // Create new Planet
+        planets.back().Initialize(
+            planetData[i][0],    // orbit radius
+            planetData[i][1],    // rotation speed
+            planetData[i][2]     // size
+        );
+        sceneObjects.push_back(planets.back().GetMesh());
     }
 }
 
 void updatePlanets() {
-    float time = glfwGetTime();
-    const float* sunPos = sun->getPosition();
-    
-    // Mettre à jour la position des planètes
-    for(size_t i = 0; i < planets.size(); i++) {
-        Planet& planet = planets[i];
-        
-        // Calcul de la position orbitale
-        float angle = time * planet.rotationSpeed;
-        float x = cos(angle) * planet.orbitRadius;
-        float z = sin(angle) * planet.orbitRadius;
-        
-        // Créer la matrice de transformation
-        Mat4 translation = Mat4::translate(x, 0.0f, z);
-        Mat4 rotation = Mat4::rotate(planet.selfRotation, 0.0f, 1.0f, 0.0f);
-        Mat4 scale = Mat4::scale(planet.size, planet.size, planet.size);
-        
-        // Combiner les transformations
-        Mat4 transform = translation * rotation * scale;
-        
-        // Appliquer la transformation
-        planet.mesh->setTransform(transform);
-        
-        // Mettre à jour les transformations stockées
-        ObjectTransform& objectTransform = objectTransforms[planet.mesh];
-        objectTransform.position[0] = x;
-        objectTransform.position[1] = 0.0f;
-        objectTransform.position[2] = z;
-        objectTransform.scale[0] = objectTransform.scale[1] = objectTransform.scale[2] = planet.size;
-        
-        // Mettre à jour la rotation
-        planet.selfRotation += elapsed_time * 0.5f;
+    for(auto& planet : planets) {
+        planet.Update(elapsed_time);
     }
 }
 
@@ -504,10 +443,30 @@ void Terminate()
 {
     g_BasicShader.Destroy();
 
-    // Nettoyer les objets de la scène
+    // Ne pas supprimer les Mesh qui appartiennent aux planètes
+    std::vector<Mesh*> meshesToDelete;
     for(Mesh* obj : sceneObjects) {
+        // Vérifier si le Mesh appartient à une planète
+        bool isPlanetMesh = false;
+        for(const auto& planet : planets) {
+            if(planet.GetMesh() == obj) {
+                isPlanetMesh = true;
+                break;
+            }
+        }
+        
+        // Si ce n'est pas un Mesh de planète et pas le soleil, l'ajouter à la liste
+        if(!isPlanetMesh && obj != sun) {
+            meshesToDelete.push_back(obj);
+        }
+    }
+
+    // Supprimer les Mesh qui ne sont pas des planètes
+    for(Mesh* obj : meshesToDelete) {
         delete obj;
     }
+
+    delete sun;  // Supprimer le soleil
     sceneObjects.clear();
 
     // Cleanup Skybox
@@ -515,48 +474,37 @@ void Terminate()
     glDeleteBuffers(1, &skyboxVBO);
     glDeleteTextures(1, &skyboxTexture);
 
-    // Nettoyer les planètes
-    for(Planet& planet : planets) {
-        if(planet.texture != 0) {
-            glDeleteTextures(1, &planet.texture);
-        }
-    }
+    // Les planètes vont nettoyer leurs propres Mesh dans leur destructeur
+    planets.clear();  
 
     g_UI.reset();
-    g_Skybox.reset(); // Remplacer le nettoyage de la skybox par
-    g_Camera.reset(); // Ajouté ici pour libérer la caméra
+    g_Skybox.reset();
+    g_Camera.reset();
 }
 
 void loadPlanetTextures() {
+    const char* tab[] = {
+        "models/mercury.png",
+        "models/venus.png",
+        "models/earth.png",
+        "models/mars.png",
+        "models/jupiter.png",
+        "models/saturn.png",
+        "models/uranus.png",
+        "models/neptune.png"
+    };
 
-    const char* tab[]={
-	"models/mercury.png",
-	"models/venus.png",
-	"models/earth.png",
-	"models/mars.png",
-	"models/jupiter.png",
-	"models/saturn.png",
-	"models/uranus.png",
-	"models/neptune.png"
-};
     for(size_t i = 0; i < planets.size(); i++) {
         Planet& planet = planets[i];
-        if (planet.mesh) {
-            // Configuration du matériau
-            Material planetMaterial;
-            planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
-            planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
-            planetMaterial.shininess = 32.0f;
-            planetMaterial.isEmissive = false;
-            planet.mesh->setMaterial(planetMaterial);
-            
-            // Charger la texture
-            if (planet.mesh->loadTexture(tab[i])) {
-                std::cout << "Texture loaded successfully for planet " << i << std::endl;
-                planet.texture = planet.mesh->getMaterial().diffuseMap;
-            } else {
-                std::cerr << "Error: Could not load texture for planet " << i << std::endl;
-            }
+        Material planetMaterial;
+        planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
+        planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
+        planetMaterial.shininess = 32.0f;
+        planetMaterial.isEmissive = false;
+        planet.SetMaterial(planetMaterial);
+        
+        if (!planet.LoadTexture(tab[i])) {
+            std::cerr << "Error: Could not load texture for planet " << i << std::endl;
         }
     }
 }

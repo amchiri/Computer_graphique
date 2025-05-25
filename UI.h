@@ -9,15 +9,7 @@
 #include <memory>
 #include "Mesh.h"
 #include "GLShader.h"
-
-struct Planet {
-    Mesh* mesh = nullptr;
-    float orbitRadius;
-    float rotationSpeed;
-    float size;
-    float selfRotation;
-    GLuint texture;
-};
+#include "Planet.h"  // Include the Planet class instead of defining struct Planet
 
 class UI {
 public:
@@ -46,7 +38,7 @@ private:
     
     std::vector<Mesh*>* m_SceneObjects;
     Mesh* m_Sun;
-    std::vector<Planet>* m_Planets;
+    std::vector<Planet>* m_Planets;  // Utiliser un pointeur vers le vecteur de planètes
     
     GLShader* m_BasicShader;
     GLShader* m_ColorShader;

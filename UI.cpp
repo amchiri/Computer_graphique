@@ -136,17 +136,18 @@ void UI::ShowObjectControls() {
                 sprintf(label, "Planet %zu", i);
                 if (ImGui::TreeNode(label)) {
                     Planet& planet = (*m_Planets)[i];
-                    float orbitRadius = planet.orbitRadius;
-                    float rotationSpeed = planet.rotationSpeed;
-                    float size = planet.size;
+                    float orbitRadius = planet.GetOrbitRadius();
+                    float rotationSpeed = planet.GetRotationSpeed();
+                    float size = planet.GetSize();
 
                     ImGui::DragFloat("Orbit Radius", &orbitRadius, 0.1f, 1.0f, 200.0f);
                     ImGui::DragFloat("Size", &size, 0.1f, 0.1f, 100.0f);
                     ImGui::DragFloat("Orbital Speed", &rotationSpeed, 0.01f, 0.0f, 2.0f);
 
-                    planet.orbitRadius = orbitRadius;
-                    planet.size = size;
-                    planet.rotationSpeed = rotationSpeed;
+                    // Update using setters
+                    planet.SetOrbitRadius(orbitRadius);
+                    planet.SetSize(size);
+                    planet.SetRotationSpeed(rotationSpeed);
 
                     ImGui::TreePop();
                 }
@@ -162,7 +163,7 @@ void UI::ShowObjectControls() {
                 
                 bool isPlanet = false;
                 for (const auto& planet : *m_Planets) {
-                    if (planet.mesh == obj) {
+                    if (planet.GetMesh() == obj) {
                         isPlanet = true;
                         break;
                     }
