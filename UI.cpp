@@ -84,11 +84,25 @@ void UI::ShowMainWindow(float fps, const float* cameraPos, const float* cameraDi
     }
 }
 
+void UI::SetLightParameters(float* lightColor, float* lightIntensity) {
+    m_GlobalLightColor = lightColor;
+    m_GlobalLightIntensity = lightIntensity;
+    
+    // Copier les valeurs initiales
+    if (lightColor) memcpy(m_LightColor, lightColor, 3 * sizeof(float));
+    if (lightIntensity) m_LightIntensity = *lightIntensity;
+}
+
 void UI::ShowLightSettings() {
     if (!m_ShowSettings || !m_Sun) return;
 
-    ImGui::ColorEdit3("Light Color", m_LightColor);
-    ImGui::SliderFloat("Light Intensity", &m_LightIntensity, 0.0f, 10.0f);
+    if (ImGui::ColorEdit3("Light Color", m_LightColor) && m_GlobalLightColor) {
+        memcpy(m_GlobalLightColor, m_LightColor, 3 * sizeof(float));
+    }
+
+    if (ImGui::SliderFloat("Light Intensity", &m_LightIntensity, 0.0f, 10.0f) && m_GlobalLightIntensity) {
+        *m_GlobalLightIntensity = m_LightIntensity;
+    }
 
     float lightPos[3];
     memcpy(lightPos, m_Sun->getPosition(), 3 * sizeof(float));

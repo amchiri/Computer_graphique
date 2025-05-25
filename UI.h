@@ -28,6 +28,7 @@ public:
     void RenderUI(float fps, const float* cameraPos, const float* cameraFront);
     void SetSceneObjects(std::vector<Mesh*>& objects, Mesh* sun, std::vector<Planet>& planets);
     void SetShaders(GLShader* basic, GLShader* color, GLShader* envmap);
+    void SetLightParameters(float* lightColor, float* lightIntensity);
 
 private:
     void ShowMainWindow(float fps, const float* cameraPos, const float* cameraFront);
@@ -51,6 +52,8 @@ private:
     GLShader* m_ColorShader;
     GLShader* m_EnvMapShader;
     
-    float m_LightColor[3];
-    float m_LightIntensity;
+    float m_LightColor[3] = {1.0f, 1.0f, 1.0f};
+    float m_LightIntensity = 1.0f;
+    float* m_GlobalLightColor = nullptr;
+    float* m_GlobalLightIntensity = nullptr;
 };

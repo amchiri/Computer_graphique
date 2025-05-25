@@ -359,6 +359,7 @@ bool Initialise()
     g_UI->Initialize();
     g_UI->SetSceneObjects(sceneObjects, sun, planets);
     g_UI->SetShaders(&g_BasicShader, &g_ColorShader, &g_EnvMapShader);
+    g_UI->SetLightParameters(light_color, &light_intensity); // Ajouter cette ligne
 
     return true;
 }
