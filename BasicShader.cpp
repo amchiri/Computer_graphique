@@ -31,6 +31,8 @@ GLuint skyboxTexture;
 GLShader g_SkyboxShader;
 
 GLShader g_BasicShader;
+GLShader g_ColorShader;
+GLShader g_EnvMapShader;
 GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
 int width = 1200, height = 900; // taille de la fenêtre
 
@@ -96,6 +98,9 @@ struct ObjectTransform {
 // Map globale pour stocker les transformations des objets
 std::map<Mesh*, ObjectTransform> objectTransforms;
 
+// Map pour le shader choisi par objet
+std::map<Mesh*, GLShader*> objectShaders;
+
 // Déclarations des prototypes de fonctions
 void createPlanets();
 void loadPlanetTextures();
@@ -103,6 +108,7 @@ void updatePlanets();
 void initializeSolarSystem();
 void createSkybox();
 void AdjustInitialCamera();
+void createDemoObjects();
 
 // Déclarer les prototypes des fonctions utilisées dans RenderImGuiObjectControls
 std::string OpenFileDialog(const char* filter = "OBJ files\0*.obj\0All files\0*.*\0");
@@ -269,8 +275,18 @@ bool Initialise()
 	g_BasicShader.LoadFragmentShader("Basic.fs");
 	g_BasicShader.Create();
 
+    // Ajoute l'initialisation des shaders supplémentaires
+    g_ColorShader.LoadVertexShader("Color.vs");
+    g_ColorShader.LoadFragmentShader("Color.fs");
+    g_ColorShader.Create();
+
+    g_EnvMapShader.LoadVertexShader("EnvMap.vs");
+    g_EnvMapShader.LoadFragmentShader("EnvMap.fs");
+    g_EnvMapShader.Create();
+
 	// Création du soleil et des planètes
 	initializeSolarSystem();
+    createDemoObjects();
 
 	// Ajuster la caméra pour mieux voir le système solaire
 	AdjustInitialCamera();
@@ -733,6 +749,84 @@ bool LoadModelWithTexture(const std::string& modelPath) {
     return true;
 }
 
+void createDemoObjects() {
+    // Cube couleur simple
+    Mesh* colorCube = new Mesh();
+    colorCube->loadFromOBJFile("models/cube.obj");
+    Material matColor;
+    matColor.diffuse[0] = 0.2f; matColor.diffuse[1] = 0.8f; matColor.diffuse[2] = 0.2f;
+    matColor.specular[0] = matColor.specular[1] = matColor.specular[2] = 0.0f;
+    matColor.shininess = 1.0f;
+    matColor.isEmissive = false;
+    colorCube->setMaterial(matColor);
+    colorCube->setPosition(-20, 5, 0);
+    sceneObjects.push_back(colorCube);
+    objectShaders[colorCube] = &g_ColorShader;
+
+    // Cube texturé
+    Mesh* texCube = new Mesh();
+    texCube->loadFromOBJFile("models/cube.obj");
+    texCube->loadTexture("models/earth.png");
+    Material matTex;
+    matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
+    matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;
+    matTex.shininess = 16.0f;
+    matTex.isEmissive = false;
+    texCube->setMaterial(matTex);
+    texCube->setPosition(0, 5, 0);
+    sceneObjects.push_back(texCube);
+    objectShaders[texCube] = &g_BasicShader;
+
+    // Cube envmap
+    Mesh* envCube = new Mesh();
+    envCube->loadFromOBJFile("models/cube.obj");
+    Material matEnv;
+    matEnv.diffuse[0] = matEnv.diffuse[1] = matEnv.diffuse[2] = 1.0f;
+    matEnv.specular[0] = matEnv.specular[1] = matEnv.specular[2] = 1.0f;
+    matEnv.shininess = 64.0f;
+    matEnv.isEmissive = false;
+    envCube->setMaterial(matEnv);
+    envCube->setPosition(20, 5, 0);
+    sceneObjects.push_back(envCube);
+    objectShaders[envCube] = &g_EnvMapShader;
+}
+
+void RenderImGuiShaderSettings() {
+    if (ImGui::CollapsingHeader("Shader Settings")) {
+        static int selected_object = -1;
+        ImGui::Text("Select an object and assign a shader:");
+        for (size_t i = 0; i < sceneObjects.size(); ++i) {
+            char label[32];
+            sprintf(label, "Object %zu", i);
+            if (ImGui::Selectable(label, selected_object == (int)i)) {
+                selected_object = (int)i;
+            }
+        }
+        if (selected_object >= 0 && selected_object < (int)sceneObjects.size()) {
+            Mesh* obj = sceneObjects[selected_object];
+            GLShader* currentShader = objectShaders[obj];
+            if (!currentShader) currentShader = &g_BasicShader;
+            bool isColor = (currentShader == &g_ColorShader);
+            bool isBasic = (currentShader == &g_BasicShader);
+            bool isEnvMap = (currentShader == &g_EnvMapShader);
+
+            if (ImGui::RadioButton("Couleur simple", isColor)) objectShaders[obj] = &g_ColorShader;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Texture", isBasic)) objectShaders[obj] = &g_BasicShader;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Env. map", isEnvMap)) objectShaders[obj] = &g_EnvMapShader;
+
+            // Permet de changer la couleur si shader couleur simple
+            if (objectShaders[obj] == &g_ColorShader) {
+                Material mat = obj->getMaterial();
+                if (ImGui::ColorEdit3("Couleur", mat.diffuse)) {
+                    obj->setMaterial(mat);
+                }
+            }
+        }
+    }
+}
+
 void Render()
 {
 	// Calcul du FPS
@@ -749,15 +843,8 @@ void Render()
 	glClearColor(0.0f, 0.0f, 0.0f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	auto basicProgram = g_BasicShader.GetProgram();
-	glUseProgram(basicProgram);
-
-	// Create and pass the perspective projection matrix.
+	// Créer les matrices communes
 	Mat4 projectionMatrix = Mat4::perspective(fov, (float)width / height, cam_near, cam_far);
-	GLint loc_projection = glGetUniformLocation(basicProgram, "u_projection");
-	glUniformMatrix4fv(loc_projection, 1, GL_FALSE, projectionMatrix.data());
-
-	// Créer la matrice de vue
 	float center[3] = {
 		camera.position[0] + camera.front[0],
 		camera.position[1] + camera.front[1],
@@ -765,21 +852,102 @@ void Render()
 	};
 	Mat4 viewMatrix = Mat4::lookAt(camera.position, center, camera.up);
 
-	// Passer la matrice de vue au shader
-	GLint loc_view = glGetUniformLocation(basicProgram, "u_view");
-	glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
+	// Mise à jour des planètes
+	updatePlanets();
 
-	// Rendre d'abord les objets de la scène
-	for(Mesh* obj : sceneObjects) {
-        if(obj == sun) {
-            Material sunMat = obj->getMaterial();
-            sunMat.isEmissive = true;
-            obj->setMaterial(sunMat);
-        }
-        obj->draw(g_BasicShader);
-    }
+	// Rendu des objets avec leur shader sélectionné
+	for (Mesh* obj : sceneObjects) {
+		// Déterminer quel shader utiliser
+		GLShader* shader = &g_BasicShader;
+		auto it = objectShaders.find(obj);
+		if (it != objectShaders.end() && it->second) {
+			shader = it->second;
+		}
 
-    // Puis rendre la skybox en dernier
+		GLuint program = shader->GetProgram();
+		glUseProgram(program);
+
+		// Passer les matrices communes à tous les shaders
+		GLint loc_proj = glGetUniformLocation(program, "u_projection");
+		if (loc_proj >= 0) glUniformMatrix4fv(loc_proj, 1, GL_FALSE, projectionMatrix.data());
+		
+		GLint loc_view = glGetUniformLocation(program, "u_view");
+		if (loc_view >= 0) glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
+
+		// Passer la matrice de transformation de l'objet
+		float modelMatrix[16];
+		obj->calculateModelMatrix(modelMatrix);
+		GLint loc_transform = glGetUniformLocation(program, "u_transform");
+		if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
+
+		// Configuration spécifique selon le shader
+		if (shader == &g_ColorShader) {
+			// Pour le shader couleur : passer uniquement la couleur
+			GLint loc_color = glGetUniformLocation(program, "u_color");
+			if (loc_color >= 0) {
+				const Material& mat = obj->getMaterial();
+				glUniform3fv(loc_color, 1, mat.diffuse);
+			}
+		}
+		else if (shader == &g_BasicShader) {
+			// Pour le shader de base : configuration complète de l'éclairage
+			const float* sunPos = sun->getPosition();
+			GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
+			if (loc_lightDir >= 0) glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
+			
+			float lightDiffuse[3] = {
+				light_color[0] * light_intensity * 2.0f,
+				light_color[1] * light_intensity * 2.0f,
+				light_color[2] * light_intensity * 2.0f
+			};
+
+			GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
+			GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
+			GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
+			
+			if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
+			if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+			if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
+
+			// Configuration du matériau
+			float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
+			float matSpecular[3] = {1.0f, 1.0f, 1.0f};
+			float matShininess = 20.0f;
+			
+			GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+			GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+			GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+			
+			if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, matDiffuse);
+			if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, matSpecular);
+			if (loc_matShininess >= 0) glUniform1f(loc_matShininess, matShininess);
+
+			// Position de la caméra
+			GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+			if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, camera.position);
+
+			// Gestion des objets émissifs
+			GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
+			if (loc_isEmissive >= 0) {
+				bool isEmissive = (obj == sun);
+				glUniform1i(loc_isEmissive, isEmissive ? 1 : 0);
+			}
+		}
+		else if (shader == &g_EnvMapShader) {
+			// Pour le shader environment mapping
+			GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+			if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, camera.position);
+			
+			// Si vous avez une cubemap, l'activer ici
+			// GLint loc_envmap = glGetUniformLocation(program, "u_envmap");
+			// if (loc_envmap >= 0) glUniform1i(loc_envmap, 0);
+		}
+
+		// Dessiner l'objet
+		obj->draw(*shader);
+	}
+
+	// Rendu de la skybox en dernier
 	glDepthFunc(GL_LEQUAL);
 	glUseProgram(g_SkyboxShader.GetProgram());
 
@@ -800,75 +968,11 @@ void Render()
 	glBindTexture(GL_TEXTURE_2D, skyboxTexture);
 	glDrawArrays(GL_TRIANGLES, 0, 36);
 	
-	// Débinder la texture du skybox avant de passer aux planètes
+	// Débinder la texture du skybox
 	glBindTexture(GL_TEXTURE_2D, 0);
-
+	
 	// Réinitialiser les états OpenGL pour le rendu normal
 	glDepthFunc(GL_LESS);
-	glUseProgram(basicProgram);
-
-	// Mise à jour de la position de la lumière pour qu'elle suive le soleil
-	const float* sunPos = sun->getPosition();
-	GLint loc_lightDir = glGetUniformLocation(basicProgram, "u_light.direction");
-	
-	// La direction de la lumière est la position du soleil
-	glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
-	
-	// Augmenter l'intensité de la lumière du soleil
-	float lightDiffuse[3] = {
-		light_color[0] * light_intensity * 2.0f,
-		light_color[1] * light_intensity * 2.0f,
-		light_color[2] * light_intensity * 2.0f
-	};
-
-	// Configuration de la lumière - Utiliser la position du soleil comme source de lumière
-	GLint loc_lightDiffuse = glGetUniformLocation(basicProgram, "u_light.diffuseColor");
-	GLint loc_lightSpecular = glGetUniformLocation(basicProgram, "u_light.specularColor");
-	GLint loc_intensity = glGetUniformLocation(basicProgram, "u_intensity");
-	
-	glUniform1f(loc_intensity, light_intensity);
-	glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-	glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
-
-	// Configuration du matériau
-	float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
-	float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-	float matShininess = 20.0f;
-	
-	GLint loc_matDiffuse = glGetUniformLocation(basicProgram, "u_material.diffuseColor");
-	GLint loc_matSpecular = glGetUniformLocation(basicProgram, "u_material.specularColor");
-	GLint loc_matShininess = glGetUniformLocation(basicProgram, "u_material.shininess");
-	
-	glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-	glUniform3fv(loc_matSpecular, 1, matSpecular);
-	glUniform1f(loc_matShininess, matShininess);
-
-	// Position de la caméra
-	GLint loc_viewPos = glGetUniformLocation(basicProgram, "u_viewPos");
-	glUniform3fv(loc_viewPos, 1, camera.position);
-
-	// Gestion des objets émissifs
-	GLint loc_isEmissive = glGetUniformLocation(basicProgram, "u_material.isEmissive");
-	glUniform1i(loc_isEmissive, 0);
-
-	// Mise à jour des planètes
-	updatePlanets();
-
-	// Modifier la manière dont les objets sont rendus
-	for(Mesh* obj : sceneObjects) {
-        if(obj == sun) {
-            Material sunMat = obj->getMaterial();
-            sunMat.isEmissive = true;
-            obj->setMaterial(sunMat);
-			
-        }
-        
-        // Chaque objet va gérer sa propre texture dans sa méthode draw()
-        obj->draw(g_BasicShader);
-        
-        // Débinder la texture après chaque objet
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
 
 	// Début du rendu ImGui
 	ImGui_ImplOpenGL3_NewFrame();
@@ -902,7 +1006,6 @@ void Render()
 			}
 		}
 
-
 		// Ajout de debug pour la texture dans l'interface ImGui
 		if (ImGui::CollapsingHeader("Texture Debug")) {
 			ImGui::Text("Texture ID: %d", skyboxTexture);
@@ -916,11 +1019,11 @@ void Render()
 		// Contrôles d'éclairage simplifiés
 		static float ambientStrength = 0.3f;
 		if (ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f)) {
-			GLint loc_ambient = glGetUniformLocation(basicProgram, "u_ambient_strength");
-			glUniform1f(loc_ambient, ambientStrength);
+			// Cette variable peut être utilisée dans le shader de base si nécessaire
 		}
 
 		RenderImGuiObjectControls();
+		RenderImGuiShaderSettings();
 
 		ImGui::End();
 	}
@@ -939,8 +1042,8 @@ void Render()
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    // Réactive sRGB pour la prochaine frame (optionnel, sécurité)
-    glEnable(GL_FRAMEBUFFER_SRGB);
+	// Réactive sRGB pour la prochaine frame (optionnel, sécurité)
+	glEnable(GL_FRAMEBUFFER_SRGB);
 }
 
 int main()

@@ -37,9 +37,12 @@ public:
     const float* getPosition() const;
     void setTransform(const Mat4& transform);
     const Mat4& getTransform() const;
-    
-    bool loadFromFile(const char* filename);
+
+    // Ces méthodes doivent être publiques (et une seule déclaration !)
+    void calculateModelMatrix(float* outMatrix);
     bool loadTexture(const char* filename);
+
+    // Ajoute ces deux méthodes publiques :
     bool loadFromOBJFile(const char* filename);
     void draw(GLShader& shader);
 
@@ -55,5 +58,6 @@ private:
     Mat4 m_transform;  // Nouvelle matrice de transformation complète
     
     void setupMesh();
-    void calculateModelMatrix(float* outMatrix);
+    // Supprime la déclaration privée de calculateModelMatrix ici !
+    // void calculateModelMatrix(float* outMatrix); // <-- À SUPPRIMER
 };
