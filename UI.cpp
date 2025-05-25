@@ -72,9 +72,11 @@ void UI::RenderUI(float fps, const float* cameraPos, const float* cameraDir) {
 void UI::ShowMainWindow(float fps, const float* cameraPos, const float* cameraDir) {
     if (m_ShowDebugWindow) {
         ImGui::Begin("Debug Info");
+        if (ImGui::CollapsingHeader("Camera")) {
+            ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos[0], cameraPos[1], cameraPos[2]);
+            ImGui::Text("Direction: (%.2f, %.2f, %.2f)", cameraDir[0], cameraDir[1], cameraDir[2]);
+        }
         ImGui::Text("FPS: %.1f", fps);
-        ImGui::Text("Camera Position: (%.1f, %.1f, %.1f)", cameraPos[0], cameraPos[1], cameraPos[2]);
-        ImGui::Text("Camera Direction: (%.1f, %.1f, %.1f)", cameraDir[0], cameraDir[1], cameraDir[2]);
         ShowLightSettings();
         ShowObjectControls();
         ShowShaderSettings();

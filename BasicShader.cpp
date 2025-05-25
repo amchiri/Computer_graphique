@@ -24,11 +24,17 @@
 #include <commdlg.h>
 #include <map>
 #include "UI.h"
+#include "Skybox.h" // Ajouter en haut du fichier
+#include "CameraController.h"
 
-// Déclaration globale de l'interface utilisateur
+// Déclaration globale des variables
 std::unique_ptr<UI> g_UI;
+std::unique_ptr<Skybox> g_Skybox;
+std::unique_ptr<CameraController> g_Camera;
+std::vector<Mesh*> sceneObjects;  // Moved to top
+Mesh* sun = nullptr;  // Moved to top and initialized
 
-// Skybox variables
+// Variables globales de la skybox
 GLuint skyboxVAO, skyboxVBO;
 GLuint skyboxTexture;
 GLShader g_SkyboxShader;
@@ -42,21 +48,6 @@ int width = 1200, height = 900; // taille de la fenêtre
 float fov = 60 * (3.14159f / 180.0f); // angle d'ouverture de 60°
 float cam_far = 1000.0f;  // Augmenter cette valeur (était 100.0f)
 float cam_near = 0.1f;
-
-// Structure et variables pour la caméra
-struct Camera {
-    float position[3] = {0.0f, 0.0f, 3.0f};
-    float front[3] = {0.0f, 0.0f, -1.0f};
-    float up[3] = {0.0f, 1.0f, 0.0f};
-    float yaw = -90.0f;
-    float pitch = 0.0f;
-    float speed = 0.05f;
-    float sensitivity = 0.1f;
-} camera;
-
-float lastX = width / 2.0f;
-float lastY = height / 2.0f;
-bool firstMouse = true;
 
 // Variables globales pour ImGui
 bool show_demo_window = true;
@@ -107,130 +98,196 @@ std::string OpenFileDialog(const char* filter = "OBJ files\0*.obj\0All files\0*.
 bool LoadModelWithTexture(const std::string& modelPath);
 
 // Fonction de callback pour la souris
-void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
-    if (!camera_enabled || !cursor_locked) {
-        lastX = xpos;
-        lastY = ypos;
-        return;
-    }
+// Supprimer la fonction mouse_callback et la remplacer par la gestion dans CameraController
 
-    if (firstMouse) {
-        lastX = xpos;
-        lastY = ypos;
-        firstMouse = false;
-        return;
-    }
-
-    float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos;
-    lastX = xpos;
-    lastY = ypos;
-
-    xoffset *= camera.sensitivity;
-    yoffset *= camera.sensitivity;
-
-    camera.yaw += xoffset;
-    camera.pitch += yoffset;
-
-    if (camera.pitch > 89.0f) camera.pitch = 89.0f;
-    if (camera.pitch < -89.0f) camera.pitch = -89.0f;
-
-    float front[3];
-    front[0] = cos(camera.yaw * 3.14159f/180.0f) * cos(camera.pitch * 3.14159f/180.0f);
-    front[1] = sin(camera.pitch * 3.14159f/180.0f);
-    front[2] = sin(camera.yaw * 3.14159f/180.0f) * cos(camera.pitch * 3.14159f/180.0f);
-    
-    // Normaliser le vecteur front
-    float length = sqrt(front[0]*front[0] + front[1]*front[1] + front[2]*front[2]);
-    camera.front[0] = front[0]/length;
-    camera.front[1] = front[1]/length;
-    camera.front[2] = front[2]/length;
-}
-
-// Fonction de gestion des entrées
-void processInput(GLFWwindow *window) {
-    if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
-        cursor_locked = !cursor_locked;
-        camera_enabled = !camera_enabled;
-        glfwSetInputMode(window, GLFW_CURSOR, 
-            cursor_locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-        glfwWaitEvents();
-    }
-
-    // Ne traiter les inputs de caméra que si le curseur est verrouillé ET la caméra est activée
-    if (!cursor_locked || !camera_enabled || ImGui::GetIO().WantCaptureMouse) {
-        return;
-    }
-
-    float cameraSpeed = camera.speed;
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-        camera.position[0] += cameraSpeed * camera.front[0];
-        camera.position[1] += cameraSpeed * camera.front[1];
-        camera.position[2] += cameraSpeed * camera.front[2];
-    }
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-        camera.position[0] -= cameraSpeed * camera.front[0];
-        camera.position[1] -= cameraSpeed * camera.front[1];
-        camera.position[2] -= cameraSpeed * camera.front[2];
-    }
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        // Cross product de front et up pour avoir le vecteur right
-        float right[3];
-        right[0] = camera.front[1]*camera.up[2] - camera.front[2]*camera.up[1];
-        right[1] = camera.front[2]*camera.up[0] - camera.front[0]*camera.up[2];
-        right[2] = camera.front[0]*camera.up[1] - camera.front[1]*camera.up[0];
-        float length = sqrt(right[0]*right[0] + right[1]*right[1] + right[2]*right[2]);
-        camera.position[0] -= cameraSpeed * right[0]/length;
-        camera.position[1] -= cameraSpeed * right[1]/length;
-        camera.position[2] -= cameraSpeed * right[2]/length;
-    }
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-        float right[3];
-        right[0] = camera.front[1]*camera.up[2] - camera.front[2]*camera.up[1];
-        right[1] = camera.front[2]*camera.up[0] - camera.front[0]*camera.up[2];
-        right[2] = camera.front[0]*camera.up[1] - camera.front[1]*camera.up[0];
-        float length = sqrt(right[0]*right[0] + right[1]*right[1] + right[2]*right[2]);
-        camera.position[0] += cameraSpeed * right[0]/length;
-        camera.position[1] += cameraSpeed * right[1]/length;
-        camera.position[2] += cameraSpeed * right[2]/length;
+// Supprimer la fonction processInput et la remplacer par :
+void processInput(GLFWwindow* window) {
+    if (g_Camera) {
+        g_Camera->Update(elapsed_time);
     }
 }
 
-std::vector<Mesh*> sceneObjects;
-Mesh* sun;
+// Dans la fonction Render(), remplacer les références à camera par g_Camera :
+void Render()
+{
+	// Calcul du FPS
+	float current_time = glfwGetTime();
+	elapsed_time = current_time - last_frame_time;
+	last_frame_time = current_time;
+	fps = 1.0f / elapsed_time;
 
-const char* tab[]={
-	"models/mercury.png",
-	"models/venus.png",
-	"models/earth.png",
-	"models/mars.png",
-	"models/jupiter.png",
-	"models/saturn.png",
-	"models/uranus.png",
-	"models/neptune.png"
-};
+	// paramétrage de la fenêtre
+	glViewport(0, 0, width, height);
+	glEnable(GL_DEPTH_TEST);
 
-void loadPlanetTextures() {
-    for(size_t i = 0; i < planets.size(); i++) {
-        Planet& planet = planets[i];
-        if (planet.mesh) {
-            // Configuration du matériau
-            Material planetMaterial;
-            planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
-            planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
-            planetMaterial.shininess = 32.0f;
-            planetMaterial.isEmissive = false;
-            planet.mesh->setMaterial(planetMaterial);
+	// Nettoyer le buffer avec une couleur noire
+	glClearColor(0.0f, 0.0f, 0.0f, 1.f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// Créer les matrices communes
+	Mat4 projectionMatrix = Mat4::perspective(fov, (float)width / height, cam_near, cam_far);
+	
+	// Get camera data safely
+	Mat4 viewMatrix;
+	if (g_Camera) {
+		const float* camPos = g_Camera->GetPosition();
+		const float* camFront = g_Camera->GetFront();
+		const float* camUp = g_Camera->GetUp();
+
+		float camTarget[3] = {
+			camPos[0] + camFront[0],
+			camPos[1] + camFront[1],
+			camPos[2] + camFront[2]
+		};
+		viewMatrix = Mat4::lookAt(camPos, camTarget, camUp);
+	}
+
+	// Mise à jour des planètes
+	updatePlanets();
+
+	// Rendu des objets avec leur shader sélectionné
+	for (Mesh* obj : sceneObjects) {
+		// Déterminer quel shader utiliser
+		GLShader* shader = obj->getCurrentShader();
+		if (!shader) {
+			shader = &g_BasicShader; // Shader par défaut
+			obj->setCurrentShader(shader);
+		}
+
+		GLuint program = shader->GetProgram();
+		glUseProgram(program);
+
+		// Passer les matrices communes à tous les shaders
+		GLint loc_proj = glGetUniformLocation(program, "u_projection");
+		if (loc_proj >= 0) glUniformMatrix4fv(loc_proj, 1, GL_FALSE, projectionMatrix.data());
+		
+		GLint loc_view = glGetUniformLocation(program, "u_view");
+		if (loc_view >= 0) glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
+
+		// Passer la matrice de transformation de l'objet
+		float modelMatrix[16];
+		obj->calculateModelMatrix(modelMatrix);
+		GLint loc_transform = glGetUniformLocation(program, "u_transform");
+		if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
+
+		// Configuration spécifique selon le shader
+		if (shader == &g_ColorShader) {
+			// Pour le shader couleur : passer uniquement la couleur
+			GLint loc_color = glGetUniformLocation(program, "u_color");
+			if (loc_color >= 0) {
+				const Material& mat = obj->getMaterial();
+				glUniform3fv(loc_color, 1, mat.diffuse);
+			}
+		}
+		else if (shader == &g_BasicShader) {
+			// Pour le shader de base : configuration complète de l'éclairage
+			const float* sunPos = sun->getPosition();
+			GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
+			if (loc_lightDir >= 0) glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
+			
+			float lightDiffuse[3] = {
+				light_color[0] * light_intensity * 2.0f,
+				light_color[1] * light_intensity * 2.0f,
+				light_color[2] * light_intensity * 2.0f
+			};
+
+			GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
+			GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
+			GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
+			
+			if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
+			if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+			if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
+
+			// Configuration du matériau
+			float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
+			float matSpecular[3] = {1.0f, 1.0f, 1.0f};
+			float matShininess = 20.0f;
+			
+			GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+			GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+			GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+			
+			if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, matDiffuse);
+			if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, matSpecular);
+			if (loc_matShininess >= 0) glUniform1f(loc_matShininess, matShininess);
+
+			// Position de la caméra
+			GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+			if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, g_Camera->GetPosition());
+
+			// Gestion des objets émissifs
+			GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
+			if (loc_isEmissive >= 0) {
+				bool isEmissive = (obj == sun);
+				glUniform1i(loc_isEmissive, isEmissive ? 1 : 0);
+			}
+		}
+		else if (shader == &g_EnvMapShader) {
+			// Pour le shader environment mapping
+            GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+            if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, g_Camera->GetPosition());
             
-            // Charger la texture
-            if (planet.mesh->loadTexture(tab[i])) {
-                std::cout << "Texture loaded successfully for planet " << i << std::endl;
-                planet.texture = planet.mesh->getMaterial().diffuseMap;
-            } else {
-                std::cerr << "Error: Could not load texture for planet " << i << std::endl;
-            }
+            // Si vous avez une cubemap, l'activer ici
+            // GLint loc_envmap = glGetUniformLocation(program, "u_envmap");
+            // if (loc_envmap >= 0) glUniform1i(loc_envmap, 0);
         }
+
+		// Dessiner l'objet
+		obj->draw(*shader);
+	}
+
+	// Rendu de la skybox en dernier
+	if (g_Skybox) {
+        g_Skybox->Draw(viewMatrix, projectionMatrix);
     }
+
+	// Remplacer tout le code ImGui par:
+    glDisable(GL_FRAMEBUFFER_SRGB);
+    g_UI->RenderUI(fps, g_Camera->GetPosition(), g_Camera->GetFront());
+    glEnable(GL_FRAMEBUFFER_SRGB);
+}
+
+void createDemoObjects() {
+    // Cube couleur simple
+    Mesh* colorCube = new Mesh();
+    colorCube->createSphere(1.0f, 32, 32);  // ou créer un cube si vous avez la fonction
+    Material matColor;
+    matColor.diffuse[0] = 0.2f; matColor.diffuse[1] = 0.8f; matColor.diffuse[2] = 0.2f;
+    matColor.specular[0] = matColor.specular[1] = matColor.specular[2] = 0.0f;
+    matColor.shininess = 1.0f;
+    matColor.isEmissive = false;
+    colorCube->setMaterial(matColor);
+    colorCube->setPosition(-20, 5, 0);
+    sceneObjects.push_back(colorCube);
+    objectShaders[colorCube] = &g_ColorShader;
+
+    // Cube texturé
+    Mesh* texCube = new Mesh();
+    texCube->createSphere(1.0f, 32, 32);  // ou créer un cube
+    texCube->loadTexture("models/earth.png");
+    Material matTex;
+    matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
+    matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;
+    matTex.shininess = 16.0f;
+    matTex.isEmissive = false;
+    texCube->setMaterial(matTex);
+    texCube->setPosition(0, 5, 0);
+    sceneObjects.push_back(texCube);
+    objectShaders[texCube] = &g_BasicShader;
+
+    // Cube envmap
+    Mesh* envCube = new Mesh();
+    envCube->createSphere(1.0f, 32, 32);  // ou créer un cube
+    Material matEnv;
+    matEnv.diffuse[0] = matEnv.diffuse[1] = matEnv.diffuse[2] = 1.0f;
+    matEnv.specular[0] = matEnv.specular[1] = matEnv.specular[2] = 1.0f;
+    matEnv.shininess = 64.0f;
+    matEnv.isEmissive = false;
+    envCube->setMaterial(matEnv);
+    envCube->setPosition(20, 5, 0);
+    sceneObjects.push_back(envCube);
+    objectShaders[envCube] = &g_EnvMapShader;
 }
 
 bool Initialise()
@@ -246,9 +303,23 @@ bool Initialise()
     }
     glfwMakeContextCurrent(g_Window);
 
-    // Ajouter les callbacks pour la souris
-    glfwSetCursorPosCallback(g_Window, mouse_callback);
-    glfwSetInputMode(g_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    // Initialize camera first
+    g_Camera = std::make_unique<CameraController>(g_Window);
+    if (!g_Camera) {
+        std::cerr << "Failed to create camera controller" << std::endl;
+        return false;
+    }
+
+    // Set initial camera position and settings
+    g_Camera->SetPosition(0.0f, 50.0f, 100.0f);
+    g_Camera->SetMovementSpeed(0.05f);
+    g_Camera->SetSensitivity(0.1f);
+    g_Camera->SetRotation(-30.0f, -90.0f);
+    g_Camera->Initialize(); // Nouveau : initialise les callbacks de la souris
+
+    // Supprimer ces lignes car maintenant gérées par la caméra
+    // glfwSetCursorPosCallback(g_Window, mouse_callback);
+    // glfwSetInputMode(g_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // Configurer le callback de redimensionnement
     glfwSetFramebufferSizeCallback(g_Window, [](GLFWwindow* window, int w, int h) {
@@ -283,86 +354,20 @@ bool Initialise()
 	initializeSolarSystem();
     createDemoObjects();
 
-	// Ajuster la caméra pour mieux voir le système solaire
-	AdjustInitialCamera();
-
     // Create the UI instance and initialize it
     g_UI = std::make_unique<UI>(g_Window, width, height);
     g_UI->Initialize();
     g_UI->SetSceneObjects(sceneObjects, sun, planets);
     g_UI->SetShaders(&g_BasicShader, &g_ColorShader, &g_EnvMapShader);
 
-	return true;
+    return true;
 }
 
 void createSkybox() {
-    float skyboxVertices[] = {
-        -1000.0f,  1000.0f, -1000.0f,
-        -1000.0f, -1000.0f, -1000.0f,
-         1000.0f, -1000.0f, -1000.0f,
-         1000.0f, -1000.0f, -1000.0f,
-         1000.0f,  1000.0f, -1000.0f,
-        -1000.0f,  1000.0f, -1000.0f,
-
-        -1000.0f, -1000.0f,  1000.0f,
-        -1000.0f, -1000.0f, -1000.0f,
-        -1000.0f,  1000.0f, -1000.0f,
-        -1000.0f,  1000.0f, -1000.0f,
-        -1000.0f,  1000.0f,  1000.0f,
-        -1000.0f, -1000.0f,  1000.0f,
-
-         1000.0f, -1000.0f, -1000.0f,
-         1000.0f, -1000.0f,  1000.0f,
-         1000.0f,  1000.0f,  1000.0f,
-         1000.0f,  1000.0f,  1000.0f,
-         1000.0f,  1000.0f, -1000.0f,
-         1000.0f, -1000.0f, -1000.0f,
-
-        -1000.0f, -1000.0f,  1000.0f,
-        -1000.0f,  1000.0f,  1000.0f,
-         1000.0f,  1000.0f,  1000.0f,
-         1000.0f,  1000.0f,  1000.0f,
-         1000.0f, -1000.0f,  1000.0f,
-        -1000.0f, -1000.0f,  1000.0f,
-
-        -1000.0f,  1000.0f, -1000.0f,
-         1000.0f,  1000.0f, -1000.0f,
-         1000.0f,  1000.0f,  1000.0f,
-         1000.0f,  1000.0f,  1000.0f,
-        -1000.0f,  1000.0f,  1000.0f,
-        -1000.0f,  1000.0f, -1000.0f,
-
-        -1000.0f, -1000.0f, -1000.0f,
-        -1000.0f, -1000.0f,  1000.0f,
-         1000.0f, -1000.0f, -1000.0f,
-         1000.0f, -1000.0f, -1000.0f,
-        -1000.0f, -1000.0f,  1000.0f,
-         1000.0f, -1000.0f,  1000.0f
-    };
-
-    glGenVertexArrays(1, &skyboxVAO);
-    glGenBuffers(1, &skyboxVBO);
-    glBindVertexArray(skyboxVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-
-    // Charger la texture de l'espace
-    int spaceTexWidth, spaceTexHeight, spaceTexChannels;
-    unsigned char* spaceData = stbi_load("space.png", &spaceTexWidth, &spaceTexHeight, &spaceTexChannels, STBI_rgb_alpha);
-    if (spaceData) {
-        glGenTextures(1, &skyboxTexture);
-        glBindTexture(GL_TEXTURE_2D, skyboxTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8 , spaceTexWidth, spaceTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, spaceData);
-        glGenerateMipmap(GL_TEXTURE_2D);
-        stbi_image_free(spaceData);
+    g_Skybox = std::make_unique<Skybox>();
+    if (!g_Skybox->Initialize("space.png")) {
+        std::cerr << "Failed to initialize skybox" << std::endl;
     }
-
-    // Charger les shaders du skybox
-    g_SkyboxShader.LoadVertexShader("Skybox.vs");
-    g_SkyboxShader.LoadFragmentShader("Skybox.fs");
-    g_SkyboxShader.Create();
 }
 
 void initializeSolarSystem() {
@@ -488,235 +493,85 @@ void updatePlanets() {
 }
 
 void AdjustInitialCamera() {
-    camera.position[0] = 0.0f;
-    camera.position[1] = 50.0f;  // Plus haut pour voir le système
-    camera.position[2] = 100.0f; // Plus loin pour tout voir
-    camera.pitch = -30.0f;       // Regarder vers le bas
-    camera.yaw = -90.0f;
+    if (g_Camera) {
+        g_Camera->SetPosition(0.0f, 50.0f, 100.0f);
+        g_Camera->SetRotation(-30.0f, -90.0f); // Add this method to CameraController
+    }
 }
 
 void Terminate()
 {
-	g_BasicShader.Destroy();
+    g_BasicShader.Destroy();
 
-	// Nettoyer les objets de la scène
-	for(Mesh* obj : sceneObjects) {
-		delete obj;
-	}
-	sceneObjects.clear();
+    // Nettoyer les objets de la scène
+    for(Mesh* obj : sceneObjects) {
+        delete obj;
+    }
+    sceneObjects.clear();
 
-	// Cleanup Skybox
-	glDeleteVertexArrays(1, &skyboxVAO);
-	glDeleteBuffers(1, &skyboxVBO);
-	glDeleteTextures(1, &skyboxTexture);
+    // Cleanup Skybox
+    glDeleteVertexArrays(1, &skyboxVAO);
+    glDeleteBuffers(1, &skyboxVBO);
+    glDeleteTextures(1, &skyboxTexture);
 
-	// Nettoyer les planètes
-	for(Planet& planet : planets) {
-		if(planet.texture != 0) {
-			glDeleteTextures(1, &planet.texture);
-		}
-	}
+    // Nettoyer les planètes
+    for(Planet& planet : planets) {
+        if(planet.texture != 0) {
+            glDeleteTextures(1, &planet.texture);
+        }
+    }
 
     g_UI.reset();
+    g_Skybox.reset(); // Remplacer le nettoyage de la skybox par
+    g_Camera.reset(); // Ajouté ici pour libérer la caméra
 }
 
-void Render()
-{
-	// Calcul du FPS
-	float current_time = glfwGetTime();
-	elapsed_time = current_time - last_frame_time;
-	last_frame_time = current_time;
-	fps = 1.0f / elapsed_time;
+void loadPlanetTextures() {
 
-	// paramétrage de la fenêtre
-	glViewport(0, 0, width, height);
-	glEnable(GL_DEPTH_TEST);
-
-	// Nettoyer le buffer avec une couleur noire
-	glClearColor(0.0f, 0.0f, 0.0f, 1.f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	// Créer les matrices communes
-	Mat4 projectionMatrix = Mat4::perspective(fov, (float)width / height, cam_near, cam_far);
-	float center[3] = {
-		camera.position[0] + camera.front[0],
-		camera.position[1] + camera.front[1],
-		camera.position[2] + camera.front[2]
-	};
-	Mat4 viewMatrix = Mat4::lookAt(camera.position, center, camera.up);
-
-	// Mise à jour des planètes
-	updatePlanets();
-
-	// Rendu des objets avec leur shader sélectionné
-	for (Mesh* obj : sceneObjects) {
-		// Déterminer quel shader utiliser
-		GLShader* shader = obj->getCurrentShader();
-		if (!shader) {
-			shader = &g_BasicShader; // Shader par défaut
-			obj->setCurrentShader(shader);
-		}
-
-		GLuint program = shader->GetProgram();
-		glUseProgram(program);
-
-		// Passer les matrices communes à tous les shaders
-		GLint loc_proj = glGetUniformLocation(program, "u_projection");
-		if (loc_proj >= 0) glUniformMatrix4fv(loc_proj, 1, GL_FALSE, projectionMatrix.data());
-		
-		GLint loc_view = glGetUniformLocation(program, "u_view");
-		if (loc_view >= 0) glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
-
-		// Passer la matrice de transformation de l'objet
-		float modelMatrix[16];
-		obj->calculateModelMatrix(modelMatrix);
-		GLint loc_transform = glGetUniformLocation(program, "u_transform");
-		if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
-
-		// Configuration spécifique selon le shader
-		if (shader == &g_ColorShader) {
-			// Pour le shader couleur : passer uniquement la couleur
-			GLint loc_color = glGetUniformLocation(program, "u_color");
-			if (loc_color >= 0) {
-				const Material& mat = obj->getMaterial();
-				glUniform3fv(loc_color, 1, mat.diffuse);
-			}
-		}
-		else if (shader == &g_BasicShader) {
-			// Pour le shader de base : configuration complète de l'éclairage
-			const float* sunPos = sun->getPosition();
-			GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
-			if (loc_lightDir >= 0) glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
-			
-			float lightDiffuse[3] = {
-				light_color[0] * light_intensity * 2.0f,
-				light_color[1] * light_intensity * 2.0f,
-				light_color[2] * light_intensity * 2.0f
-			};
-
-			GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
-			GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
-			GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
-			
-			if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
-			if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-			if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
-
-			// Configuration du matériau
-			float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
-			float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-			float matShininess = 20.0f;
-			
-			GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
-			GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
-			GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
-			
-			if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-			if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, matSpecular);
-			if (loc_matShininess >= 0) glUniform1f(loc_matShininess, matShininess);
-
-			// Position de la caméra
-			GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
-			if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, camera.position);
-
-			// Gestion des objets émissifs
-			GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
-			if (loc_isEmissive >= 0) {
-				bool isEmissive = (obj == sun);
-				glUniform1i(loc_isEmissive, isEmissive ? 1 : 0);
-			}
-		}
-		else if (shader == &g_EnvMapShader) {
-			// Pour le shader environment mapping
-			GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
-			if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, camera.position);
-			
-			// Si vous avez une cubemap, l'activer ici
-			// GLint loc_envmap = glGetUniformLocation(program, "u_envmap");
-			// if (loc_envmap >= 0) glUniform1i(loc_envmap, 0);
-		}
-
-		// Dessiner l'objet
-		obj->draw(*shader);
-	}
-
-	// Rendu de la skybox en dernier
-	glDepthFunc(GL_LEQUAL);
-	glUseProgram(g_SkyboxShader.GetProgram());
-
-	// Enlever la translation de la matrice de vue pour le skybox
-	Mat4 skyboxView = viewMatrix;
-	float* skyboxData = skyboxView.data();
-	skyboxData[12] = 0.0f;
-	skyboxData[13] = 0.0f;
-	skyboxData[14] = 0.0f;
-
-	GLint skyboxViewLoc = glGetUniformLocation(g_SkyboxShader.GetProgram(), "u_view");
-	GLint skyboxProjLoc = glGetUniformLocation(g_SkyboxShader.GetProgram(), "u_projection");
-	glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, skyboxView.data());
-	glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, projectionMatrix.data());
-
-	glBindVertexArray(skyboxVAO);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, skyboxTexture);
-	glDrawArrays(GL_TRIANGLES, 0, 36);
-	
-	// Débinder la texture du skybox
-	glBindTexture(GL_TEXTURE_2D, 0);
-	
-	// Réinitialiser les états OpenGL pour le rendu normal
-	glDepthFunc(GL_LESS);
-
-	// Remplacer tout le code ImGui par:
-    glDisable(GL_FRAMEBUFFER_SRGB);
-    g_UI->RenderUI(fps, camera.position, camera.front);
-    glEnable(GL_FRAMEBUFFER_SRGB);
+    const char* tab[]={
+	"models/mercury.png",
+	"models/venus.png",
+	"models/earth.png",
+	"models/mars.png",
+	"models/jupiter.png",
+	"models/saturn.png",
+	"models/uranus.png",
+	"models/neptune.png"
+};
+    for(size_t i = 0; i < planets.size(); i++) {
+        Planet& planet = planets[i];
+        if (planet.mesh) {
+            // Configuration du matériau
+            Material planetMaterial;
+            planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
+            planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
+            planetMaterial.shininess = 32.0f;
+            planetMaterial.isEmissive = false;
+            planet.mesh->setMaterial(planetMaterial);
+            
+            // Charger la texture
+            if (planet.mesh->loadTexture(tab[i])) {
+                std::cout << "Texture loaded successfully for planet " << i << std::endl;
+                planet.texture = planet.mesh->getMaterial().diffuseMap;
+            } else {
+                std::cerr << "Error: Could not load texture for planet " << i << std::endl;
+            }
+        }
+    }
 }
 
-void createDemoObjects() {
-    // Cube couleur simple
-    Mesh* colorCube = new Mesh();
-    colorCube->createSphere(1.0f, 32, 32);  // ou créer un cube si vous avez la fonction
-    Material matColor;
-    matColor.diffuse[0] = 0.2f; matColor.diffuse[1] = 0.8f; matColor.diffuse[2] = 0.2f;
-    matColor.specular[0] = matColor.specular[1] = matColor.specular[2] = 0.0f;
-    matColor.shininess = 1.0f;
-    matColor.isEmissive = false;
-    colorCube->setMaterial(matColor);
-    colorCube->setPosition(-20, 5, 0);
-    sceneObjects.push_back(colorCube);
-    objectShaders[colorCube] = &g_ColorShader;
+// Add main() declaration before implementation
+int main(int argc, char* argv[]);
 
-    // Cube texturé
-    Mesh* texCube = new Mesh();
-    texCube->createSphere(1.0f, 32, 32);  // ou créer un cube
-    texCube->loadTexture("models/earth.png");
-    Material matTex;
-    matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
-    matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;
-    matTex.shininess = 16.0f;
-    matTex.isEmissive = false;
-    texCube->setMaterial(matTex);
-    texCube->setPosition(0, 5, 0);
-    sceneObjects.push_back(texCube);
-    objectShaders[texCube] = &g_BasicShader;
-
-    // Cube envmap
-    Mesh* envCube = new Mesh();
-    envCube->createSphere(1.0f, 32, 32);  // ou créer un cube
-    Material matEnv;
-    matEnv.diffuse[0] = matEnv.diffuse[1] = matEnv.diffuse[2] = 1.0f;
-    matEnv.specular[0] = matEnv.specular[1] = matEnv.specular[2] = 1.0f;
-    matEnv.shininess = 64.0f;
-    matEnv.isEmissive = false;
-    envCube->setMaterial(matEnv);
-    envCube->setPosition(20, 5, 0);
-    sceneObjects.push_back(envCube);
-    objectShaders[envCube] = &g_EnvMapShader;
+// Add WinMain for Windows builds
+#ifdef _WIN32
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+    return main(__argc, __argv);
 }
+#endif
 
-int main()
-{
+// Change main implementation to include parameters
+int main(int argc, char* argv[]) {
     // Initialisation de GLFW
     if (!glfwInit()) {
         std::cerr << "Erreur : Impossible d'initialiser GLFW" << std::endl;
@@ -735,7 +590,7 @@ int main()
 
     // Boucle de rendu
     while (!glfwWindowShouldClose(g_Window)) {
-        processInput(g_Window);
+        g_Camera->Update(elapsed_time);  // Cette fonction gère maintenant tout l'input
         Render();
         glfwSwapBuffers(g_Window);
         glfwPollEvents();
