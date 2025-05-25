@@ -19,7 +19,7 @@ public:
     bool Initialize();
     void RenderUI(float fps, const float* cameraPos, const float* cameraFront);
     void SetSceneObjects(std::vector<Mesh*>& objects, Mesh* sun, std::vector<Planet>& planets);
-    void SetShaders(GLShader* basic, GLShader* color, GLShader* envmap);
+    void SetShaders(GLShader* basic, GLShader* color, GLShader* envmap); // Changed from references to pointers
     void SetLightParameters(float* lightColor, float* lightIntensity);
 
 private:

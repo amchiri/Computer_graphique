@@ -27,6 +27,7 @@
 #include "Skybox.h" // Ajouter en haut du fichier
 #include "CameraController.h"
 #include "Planet.h" // Ajouter ici
+#include "ResourceManager.h"
 
 // Déclaration globale des variables
 std::unique_ptr<UI> g_UI;
@@ -40,9 +41,9 @@ GLuint skyboxVAO, skyboxVBO;
 GLuint skyboxTexture;
 GLShader g_SkyboxShader;
 
-GLShader g_BasicShader;
-GLShader g_ColorShader;
-GLShader g_EnvMapShader;
+GLShader* g_BasicShader = nullptr;
+GLShader* g_ColorShader = nullptr;
+GLShader* g_EnvMapShader = nullptr;
 GLFWwindow* g_Window = nullptr; // Variable globale pour la fenêtre
 int width = 1200, height = 900; // taille de la fenêtre
 
@@ -149,13 +150,13 @@ void Render()
 	// Rendu des objets avec leur shader sélectionné
 	for (Mesh* obj : sceneObjects) {
 		// Déterminer quel shader utiliser
-		GLShader* shader = obj->getCurrentShader();
-		if (!shader) {
-			shader = &g_BasicShader; // Shader par défaut
-			obj->setCurrentShader(shader);
+		GLShader* currentShader = obj->getCurrentShader();
+		if (!currentShader) {
+			currentShader = g_BasicShader; // Shader par défaut
+			obj->setCurrentShader(currentShader);
 		}
 
-		GLuint program = shader->GetProgram();
+		GLuint program = currentShader->GetProgram();
 		glUseProgram(program);
 
 		// Passer les matrices communes à tous les shaders
@@ -172,7 +173,7 @@ void Render()
 		if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
 
 		// Configuration spécifique selon le shader
-		if (shader == &g_ColorShader) {
+		if (currentShader == g_ColorShader) {
 			// Pour le shader couleur : passer uniquement la couleur
 			GLint loc_color = glGetUniformLocation(program, "u_color");
 			if (loc_color >= 0) {
@@ -180,7 +181,7 @@ void Render()
 				glUniform3fv(loc_color, 1, mat.diffuse);
 			}
 		}
-		else if (shader == &g_BasicShader) {
+		else if (currentShader == g_BasicShader) {
 			// Pour le shader de base : configuration complète de l'éclairage
 			const float* sunPos = sun->getPosition();
 			GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
@@ -224,7 +225,7 @@ void Render()
 				glUniform1i(loc_isEmissive, isEmissive ? 1 : 0);
 			}
 		}
-		else if (shader == &g_EnvMapShader) {
+		else if (currentShader == g_EnvMapShader) {
 			// Pour le shader environment mapping
             GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
             if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, g_Camera->GetPosition());
@@ -235,7 +236,7 @@ void Render()
         }
 
 		// Dessiner l'objet
-		obj->draw(*shader);
+		obj->draw(*currentShader);
 	}
 
 	// Rendu de la skybox en dernier
@@ -261,7 +262,7 @@ void createDemoObjects() {
     colorCube->setMaterial(matColor);
     colorCube->setPosition(-20, 5, 0);
     sceneObjects.push_back(colorCube);
-    objectShaders[colorCube] = &g_ColorShader;
+    objectShaders[colorCube] = g_ColorShader;
 
     // Cube texturé
     Mesh* texCube = new Mesh();
@@ -275,7 +276,7 @@ void createDemoObjects() {
     texCube->setMaterial(matTex);
     texCube->setPosition(0, 5, 0);
     sceneObjects.push_back(texCube);
-    objectShaders[texCube] = &g_BasicShader;
+    objectShaders[texCube] = g_BasicShader;
 
     // Cube envmap
     Mesh* envCube = new Mesh();
@@ -288,7 +289,7 @@ void createDemoObjects() {
     envCube->setMaterial(matEnv);
     envCube->setPosition(20, 5, 0);
     sceneObjects.push_back(envCube);
-    objectShaders[envCube] = &g_EnvMapShader;
+    objectShaders[envCube] = g_EnvMapShader;
 }
 
 bool Initialise()
@@ -318,10 +319,6 @@ bool Initialise()
     g_Camera->SetRotation(-30.0f, -90.0f);
     g_Camera->Initialize(); // Nouveau : initialise les callbacks de la souris
 
-    // Supprimer ces lignes car maintenant gérées par la caméra
-    // glfwSetCursorPosCallback(g_Window, mouse_callback);
-    // glfwSetInputMode(g_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
     // Configurer le callback de redimensionnement
     glfwSetFramebufferSizeCallback(g_Window, [](GLFWwindow* window, int w, int h) {
         width = w;
@@ -335,18 +332,33 @@ bool Initialise()
         return false;
     }
 
-	g_BasicShader.LoadVertexShader("Basic.vs");
-	g_BasicShader.LoadFragmentShader("Basic.fs");
-	g_BasicShader.Create();
+    // Remplacer l'initialisation des shaders par :
+    auto& rm = ResourceManager::Get();
+    
+    // Load our shaders
+    if (!rm.LoadShader("basic", "Basic.vs", "Basic.fs") ||
+        !rm.LoadShader("color", "Color.vs", "Color.fs") ||
+        !rm.LoadShader("envmap", "EnvMap.vs", "EnvMap.fs")) {
+        std::cerr << "Failed to load shaders" << std::endl;
+        return false;
+    }
 
-    // Ajoute l'initialisation des shaders supplémentaires
-    g_ColorShader.LoadVertexShader("Color.vs");
-    g_ColorShader.LoadFragmentShader("Color.fs");
-    g_ColorShader.Create();
+    // Store shader pointers
+    g_BasicShader = rm.GetShader("basic");
+    g_ColorShader = rm.GetShader("color");
+    g_EnvMapShader = rm.GetShader("envmap");
 
-    g_EnvMapShader.LoadVertexShader("EnvMap.vs");
-    g_EnvMapShader.LoadFragmentShader("EnvMap.fs");
-    g_EnvMapShader.Create();
+    if (!g_BasicShader || !g_ColorShader || !g_EnvMapShader) {
+        std::cerr << "Failed to get shader pointers" << std::endl;
+        return false;
+    }
+
+    // Remove shader pointer comparisons and use dereferencing
+    for (Mesh* obj : sceneObjects) {
+        if (!obj->getCurrentShader()) {
+            obj->setCurrentShader(g_BasicShader); // Default shader
+        }
+    }
 
     // Création de la skybox avant l'UI
     createSkybox();  // Déplacer cette ligne ici
@@ -359,7 +371,7 @@ bool Initialise()
     g_UI = std::make_unique<UI>(g_Window, width, height);
     g_UI->Initialize();
     g_UI->SetSceneObjects(sceneObjects, sun, planets);
-    g_UI->SetShaders(&g_BasicShader, &g_ColorShader, &g_EnvMapShader);
+    g_UI->SetShaders(g_BasicShader, g_ColorShader, g_EnvMapShader);
     g_UI->SetLightParameters(light_color, &light_intensity); // Ajouter cette ligne
 
     return true;
@@ -441,7 +453,8 @@ void AdjustInitialCamera() {
 
 void Terminate()
 {
-    g_BasicShader.Destroy();
+    // Remove this line since ResourceManager handles shader destruction
+    // g_BasicShader.Destroy();
 
     // Ne pas supprimer les Mesh qui appartiennent aux planètes
     std::vector<Mesh*> meshesToDelete;
