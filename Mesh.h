@@ -47,7 +47,10 @@ public:
     void draw(GLShader& shader);
 
     const float* getScale() const { return scale; }
-    void setCurrentShader(GLShader* shader) { m_CurrentShader = shader; }
+    void setCurrentShader(GLShader* shader) {
+        m_CurrentShader = shader;
+        updateShaderUniforms();  // Nouvelle méthode
+    }
     GLShader* getCurrentShader() const { return m_CurrentShader; }
 
 private:
@@ -63,6 +66,5 @@ private:
     GLShader* m_CurrentShader = nullptr;
     
     void setupMesh();
-    // Supprime la déclaration privée de calculateModelMatrix ici !
-    // void calculateModelMatrix(float* outMatrix); // <-- À SUPPRIMER
+    void updateShaderUniforms();  // Nouvelle méthode pour mettre à jour les uniformes
 };

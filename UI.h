@@ -18,7 +18,7 @@ public:
 
     bool Initialize();
     void RenderUI(float fps, const float* cameraPos, const float* cameraFront);
-    void SetSceneObjects(std::vector<Mesh*>& objects, Mesh* sun, std::vector<Planet>& planets);
+    void SetSceneObjects(const std::vector<Mesh*>& objects, Mesh* sun, const std::vector<Planet>& planets);
     void SetShaders(GLShader* basic, GLShader* color, GLShader* envmap); // Changed from references to pointers
     void SetLightParameters(float* lightColor, float* lightIntensity);
 
@@ -27,7 +27,10 @@ private:
     void ShowLightSettings();
     void ShowObjectControls();
     void ShowShaderSettings();
-    
+    void ShowSceneManagerWindow();
+    void ShowSceneControls();
+    void ShowNewSceneDialog();
+
     GLFWwindow* m_Window;
     int m_Width;
     int m_Height;
@@ -35,7 +38,9 @@ private:
     bool m_ShowSettings;
     bool m_WireframeMode;
     int m_SelectedObject;
-    
+    bool m_ShowNewSceneDialog;
+    char m_NewSceneName[256];
+
     std::vector<Mesh*>* m_SceneObjects;
     Mesh* m_Sun;
     std::vector<Planet>* m_Planets;  // Utiliser un pointeur vers le vecteur de planètes

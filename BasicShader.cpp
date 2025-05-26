@@ -23,13 +23,13 @@
 #include "CameraController.h"
 #include "Planet.h"
 #include "ResourceManager.h"
+#include "SceneManager.h"
 
 // Variables globales principales
 std::unique_ptr<UI> g_UI;
 std::unique_ptr<Skybox> g_Skybox;
 std::unique_ptr<CameraController> g_Camera;
-std::vector<Mesh*> sceneObjects;
-Mesh* sun = nullptr;
+SceneManager* g_SceneManager = nullptr;
 
 GLShader* g_BasicShader = nullptr;
 GLShader* g_ColorShader = nullptr;
@@ -51,21 +51,60 @@ float fps = 0.0f;
 float elapsed_time = 0.0f;
 float last_frame_time = 0.0f;
 
-// Collections d'objets
-std::vector<Planet> planets;
-std::map<Mesh*, GLShader*> objectShaders;
-
 // Prototypes de fonctions
-void createPlanets();
-void loadPlanetTextures();
-void updatePlanets();
-void initializeSolarSystem();
 void createSkybox();
-void createDemoObjects();
+void initializeScenes();
 
 void processInput(GLFWwindow* window) {
     if (g_Camera) {
         g_Camera->Update(elapsed_time);
+    }
+
+    // Changement de scène avec les touches 1, 2, etc.
+    static bool key1_pressed = false;
+    static bool key2_pressed = false;
+    static bool keyN_pressed = false;
+    static bool keyP_pressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS && !key1_pressed) {
+        key1_pressed = true;
+        if (g_SceneManager) {
+            g_SceneManager->SetActiveScene("Solar System");
+            std::cout << "Switched to Solar System scene" << std::endl;
+        }
+    } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_RELEASE) {
+        key1_pressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS && !key2_pressed) {
+        key2_pressed = true;
+        if (g_SceneManager) {
+            g_SceneManager->SetActiveScene("Demo Scene");
+            std::cout << "Switched to Demo scene" << std::endl;
+        }
+    } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_RELEASE) {
+        key2_pressed = false;
+    }
+
+    // Navigation avec N (Next) et P (Previous)
+    if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS && !keyN_pressed) {
+        keyN_pressed = true;
+        if (g_SceneManager) {
+            g_SceneManager->NextScene();
+            std::cout << "Switched to next scene" << std::endl;
+        }
+    } else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_RELEASE) {
+        keyN_pressed = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS && !keyP_pressed) {
+        keyP_pressed = true;
+        if (g_SceneManager) {
+            g_SceneManager->PreviousScene();
+            std::cout << "Switched to previous scene" << std::endl;
+        }
+    } else if (glfwGetKey(window, GLFW_KEY_P) == GLFW_RELEASE) {
+        keyP_pressed = false;
     }
 }
 
@@ -99,91 +138,10 @@ void Render() {
         viewMatrix = Mat4::lookAt(camPos, camTarget, camUp);
     }
 
-    // Mise à jour des planètes
-    updatePlanets();
-
-    // Rendu des objets
-    for (Mesh* obj : sceneObjects) {
-        GLShader* currentShader = obj->getCurrentShader();
-        if (!currentShader) {
-            currentShader = g_BasicShader;
-            obj->setCurrentShader(currentShader);
-        }
-
-        GLuint program = currentShader->GetProgram();
-        glUseProgram(program);
-
-        // Matrices communes
-        GLint loc_proj = glGetUniformLocation(program, "u_projection");
-        if (loc_proj >= 0) glUniformMatrix4fv(loc_proj, 1, GL_FALSE, projectionMatrix.data());
-        
-        GLint loc_view = glGetUniformLocation(program, "u_view");
-        if (loc_view >= 0) glUniformMatrix4fv(loc_view, 1, GL_FALSE, viewMatrix.data());
-
-        // Matrice de transformation de l'objet
-        float modelMatrix[16];
-        obj->calculateModelMatrix(modelMatrix);
-        GLint loc_transform = glGetUniformLocation(program, "u_transform");
-        if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
-
-        // Configuration spécifique selon le shader
-        if (currentShader == g_ColorShader) {
-            GLint loc_color = glGetUniformLocation(program, "u_color");
-            if (loc_color >= 0) {
-                const Material& mat = obj->getMaterial();
-                glUniform3fv(loc_color, 1, mat.diffuse);
-            }
-        }
-        else if (currentShader == g_BasicShader) {
-            // Éclairage
-            const float* sunPos = sun->getPosition();
-            GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
-            if (loc_lightDir >= 0) glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
-            
-            float lightDiffuse[3] = {
-                light_color[0] * light_intensity * 2.0f,
-                light_color[1] * light_intensity * 2.0f,
-                light_color[2] * light_intensity * 2.0f
-            };
-
-            GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
-            GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
-            GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
-            
-            if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
-            if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-            if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
-
-            // Matériau
-            float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
-            float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-            float matShininess = 20.0f;
-            
-            GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
-            GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
-            GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
-            
-            if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-            if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, matSpecular);
-            if (loc_matShininess >= 0) glUniform1f(loc_matShininess, matShininess);
-
-            // Position de la caméra
-            GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
-            if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, g_Camera->GetPosition());
-
-            // Objets émissifs
-            GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
-            if (loc_isEmissive >= 0) {
-                bool isEmissive = (obj == sun);
-                glUniform1i(loc_isEmissive, isEmissive ? 1 : 0);
-            }
-        }
-        else if (currentShader == g_EnvMapShader) {
-            GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
-            if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, g_Camera->GetPosition());
-        }
-
-        obj->draw(*currentShader);
+    // Mise à jour et rendu de la scène active
+    if (g_SceneManager) {
+        g_SceneManager->Update(elapsed_time);
+        g_SceneManager->Render(projectionMatrix, viewMatrix, g_BasicShader, g_ColorShader, g_EnvMapShader);
     }
 
     // Rendu de la skybox
@@ -193,57 +151,27 @@ void Render() {
 
     // Interface utilisateur
     glDisable(GL_FRAMEBUFFER_SRGB);
-    g_UI->RenderUI(fps, g_Camera->GetPosition(), g_Camera->GetFront());
+    
+    // Mise à jour des données UI avec la scène active
+    Scene* activeScene = g_SceneManager ? g_SceneManager->GetActiveScene() : nullptr;
+    if (activeScene && g_UI) {
+        const std::vector<Mesh*>& sceneObjects = activeScene->GetObjects();
+        Mesh* sun = activeScene->GetSun();
+        const std::vector<Planet>& planets = activeScene->GetPlanets();
+        
+        g_UI->SetSceneObjects(sceneObjects, sun, planets);
+        g_UI->RenderUI(fps, g_Camera->GetPosition(), g_Camera->GetFront());
+        
+    }
+    
     glEnable(GL_FRAMEBUFFER_SRGB);
-}
-
-void createDemoObjects() {
-    // Cube couleur
-    Mesh* colorCube = new Mesh();
-    colorCube->createSphere(1.0f, 32, 32);
-    Material matColor;
-    matColor.diffuse[0] = 0.2f; matColor.diffuse[1] = 0.8f; matColor.diffuse[2] = 0.2f;
-    matColor.specular[0] = matColor.specular[1] = matColor.specular[2] = 0.0f;
-    matColor.shininess = 1.0f;
-    matColor.isEmissive = false;
-    colorCube->setMaterial(matColor);
-    colorCube->setPosition(-20, 5, 0);
-    sceneObjects.push_back(colorCube);
-    objectShaders[colorCube] = g_ColorShader;
-
-    // Cube texturé
-    Mesh* texCube = new Mesh();
-    texCube->createSphere(1.0f, 32, 32);
-    texCube->loadTexture("models/earth.png");
-    Material matTex;
-    matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
-    matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;
-    matTex.shininess = 16.0f;
-    matTex.isEmissive = false;
-    texCube->setMaterial(matTex);
-    texCube->setPosition(0, 5, 0);
-    sceneObjects.push_back(texCube);
-    objectShaders[texCube] = g_BasicShader;
-
-    // Cube environment mapping
-    Mesh* envCube = new Mesh();
-    envCube->createSphere(1.0f, 32, 32);
-    Material matEnv;
-    matEnv.diffuse[0] = matEnv.diffuse[1] = matEnv.diffuse[2] = 1.0f;
-    matEnv.specular[0] = matEnv.specular[1] = matEnv.specular[2] = 1.0f;
-    matEnv.shininess = 64.0f;
-    matEnv.isEmissive = false;
-    envCube->setMaterial(matEnv);
-    envCube->setPosition(20, 5, 0);
-    sceneObjects.push_back(envCube);
-    objectShaders[envCube] = g_EnvMapShader;
 }
 
 bool Initialise() {
     // Configuration de la fenêtre
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     
-    g_Window = glfwCreateWindow(width, height, "OpenGL Solar System", nullptr, nullptr);
+    g_Window = glfwCreateWindow(width, height, "OpenGL Scene Manager", nullptr, nullptr);
     if (!g_Window) {
         std::cerr << "Erreur : Impossible de créer la fenêtre GLFW" << std::endl;
         glfwTerminate();
@@ -298,15 +226,21 @@ bool Initialise() {
 
     // Initialisation des objets de la scène
     createSkybox();
-    initializeSolarSystem();
-    createDemoObjects();
+    initializeScenes();
 
     // Initialisation de l'interface utilisateur
     g_UI = std::make_unique<UI>(g_Window, width, height);
     g_UI->Initialize();
-    g_UI->SetSceneObjects(sceneObjects, sun, planets);
     g_UI->SetShaders(g_BasicShader, g_ColorShader, g_EnvMapShader);
     g_UI->SetLightParameters(light_color, &light_intensity);
+
+    std::cout << "=== Scene Manager Initialized ===" << std::endl;
+    std::cout << "Controls:" << std::endl;
+    std::cout << "1: Switch to Solar System Scene" << std::endl;
+    std::cout << "2: Switch to Demo Scene" << std::endl;
+    std::cout << "N: Next Scene" << std::endl;
+    std::cout << "P: Previous Scene" << std::endl;
+    std::cout << "=================================" << std::endl;
 
     return true;
 }
@@ -318,107 +252,32 @@ void createSkybox() {
     }
 }
 
-void initializeSolarSystem() {
-    // Création du soleil
-    sun = new Mesh();
-    sun->createSphere(1.0f, 32, 32);
-
-    const float sunScale = 8.0f;
-    sun->setScale(sunScale, sunScale, sunScale);
-    sun->setPosition(0.0f, 0.0f, 0.0f);
-
-    Material sunMaterial;
-    sunMaterial.diffuse[0] = sunMaterial.diffuse[1] = sunMaterial.diffuse[2] = 1.0f;
-    sunMaterial.specular[0] = sunMaterial.specular[1] = sunMaterial.specular[2] = 0.0f;
-    sunMaterial.shininess = 0.0f;
-    sunMaterial.isEmissive = true;
-    sun->setMaterial(sunMaterial);
-    sun->loadTexture("models/sun.png");
-
-    sceneObjects.push_back(sun);
-    createPlanets();
-    loadPlanetTextures();
-}
-
-void createPlanets() {
-    // Paramètres: rayon orbital, vitesse orbitale, taille
-    float planetData[][3] = {
-        {15.0f, 0.8f, 0.8f},    // Mercure
-        {20.0f, 0.6f, 1.2f},    // Vénus
-        {28.0f, 0.4f, 1.5f},    // Terre
-        {35.0f, 0.3f, 1.2f},    // Mars
-        {50.0f, 0.15f, 4.0f},   // Jupiter
-        {65.0f, 0.12f, 3.5f},   // Saturne
-        {80.0f, 0.08f, 2.5f},   // Uranus
-    };
-
-    for(int i = 0; i < 7; i++) {
-        planets.emplace_back();
-        planets.back().Initialize(
-            planetData[i][0],    // rayon orbital
-            planetData[i][1],    // vitesse de rotation
-            planetData[i][2]     // taille
-        );
-        sceneObjects.push_back(planets.back().GetMesh());
+void initializeScenes() {
+    g_SceneManager = &SceneManager::GetInstance();
+    
+    // Création et ajout de la scène du système solaire
+    auto solarSystemScene = std::make_unique<SolarSystemScene>();
+    g_SceneManager->AddScene(std::move(solarSystemScene));
+    
+    // Création et ajout de la scène de démonstration
+    auto demoScene = std::make_unique<DemoScene>();
+    g_SceneManager->AddScene(std::move(demoScene));
+    
+    // Initialisation de toutes les scènes
+    if (!g_SceneManager->Initialize()) {
+        std::cerr << "Failed to initialize scene manager" << std::endl;
     }
-}
-
-void updatePlanets() {
-    for(auto& planet : planets) {
-        planet.Update(elapsed_time);
-    }
-}
-
-void loadPlanetTextures() {
-    const char* textures[] = {
-        "models/mercury.png",
-        "models/venus.png",
-        "models/earth.png",
-        "models/mars.png",
-        "models/jupiter.png",
-        "models/saturn.png",
-        "models/uranus.png"
-    };
-
-    for(size_t i = 0; i < planets.size(); i++) {
-        Planet& planet = planets[i];
-        Material planetMaterial;
-        planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
-        planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
-        planetMaterial.shininess = 32.0f;
-        planetMaterial.isEmissive = false;
-        planet.SetMaterial(planetMaterial);
-        
-        if (!planet.LoadTexture(textures[i])) {
-            std::cerr << "Error: Could not load texture for planet " << i << std::endl;
-        }
-    }
+    
+    // Définir la scène du système solaire comme scène active par défaut
+    g_SceneManager->SetActiveScene("Solar System");
 }
 
 void Terminate() {
-    // Nettoyage des objets qui ne sont pas des planètes
-    std::vector<Mesh*> meshesToDelete;
-    for(Mesh* obj : sceneObjects) {
-        bool isPlanetMesh = false;
-        for(const auto& planet : planets) {
-            if(planet.GetMesh() == obj) {
-                isPlanetMesh = true;
-                break;
-            }
-        }
-        
-        if(!isPlanetMesh && obj != sun) {
-            meshesToDelete.push_back(obj);
-        }
+    // Nettoyage du gestionnaire de scènes
+    if (g_SceneManager) {
+        g_SceneManager->Cleanup();
+        g_SceneManager = nullptr;
     }
-
-    for(Mesh* obj : meshesToDelete) {
-        delete obj;
-    }
-
-    delete sun;
-    sceneObjects.clear();
-    planets.clear();
 
     // Nettoyage des ressources
     g_UI.reset();

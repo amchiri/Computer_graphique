@@ -133,8 +133,24 @@ void Mesh::setScale(float x, float y, float z) {
     scale[2] = z;
 }
 
+void Mesh::updateShaderUniforms() {
+    if (!m_CurrentShader) return;
+
+    m_CurrentShader->Use();
+    
+    // Mise à jour des uniformes du matériau
+    m_CurrentShader->SetVec3("u_material.diffuseColor", material.diffuse);
+    m_CurrentShader->SetVec3("u_material.specularColor", material.specular);
+    m_CurrentShader->SetFloat("u_material.shininess", material.shininess);
+    m_CurrentShader->SetBool("u_material.isEmissive", material.isEmissive);
+
+    // Ces uniformes sont communs à tous les shaders
+    m_CurrentShader->SetFloat("u_intensity", 1.0f);
+}
+
 void Mesh::setMaterial(const Material& mat) {
     material = mat;
+    updateShaderUniforms();  // Mettre à jour les uniformes immédiatement
 }
 
 const Material& Mesh::getMaterial() const {

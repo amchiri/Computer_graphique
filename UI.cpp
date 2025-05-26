@@ -2,6 +2,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "SceneManager.h"
 #include <windows.h>
 #include <commdlg.h>
 #include <filesystem>
@@ -64,6 +65,10 @@ void UI::RenderUI(float fps, const float* cameraPos, const float* cameraDir) {
     ImGui::NewFrame();
 
     ShowMainWindow(fps, cameraPos, cameraDir);
+    ShowSceneManagerWindow();
+    if (m_ShowNewSceneDialog) {
+        ShowNewSceneDialog();
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -195,15 +200,12 @@ void UI::ShowShaderSettings() {
     if (!m_SceneObjects || !m_BasicShader || !m_ColorShader || !m_EnvMapShader) return;
 
     if (ImGui::CollapsingHeader("Shader Settings")) {
-        // Liste des objets
         for (size_t i = 0; i < m_SceneObjects->size(); i++) {
             Mesh* obj = (*m_SceneObjects)[i];
             char label[32];
             sprintf(label, "Object %zu", i);
             
-            // Créer un arbre pour chaque objet
             if (ImGui::TreeNode(label)) {
-                // Détecter le shader actuel
                 GLShader* currentShader = obj->getCurrentShader();
                 int current_shader = 0;
                 
@@ -229,20 +231,48 @@ void UI::ShowShaderSettings() {
                     shaderChanged = true;
                 }
 
-                // Mettre à jour le shader si changé
+                // Mettre à jour le shader et ses uniformes
                 if (shaderChanged) {
+                    GLShader* newShader = nullptr;
                     switch (current_shader) {
-                        case 0: obj->setCurrentShader(m_BasicShader); break;
-                        case 1: obj->setCurrentShader(m_ColorShader); break;
-                        case 2: obj->setCurrentShader(m_EnvMapShader); break;
+                        case 0: newShader = m_BasicShader; break;
+                        case 1: newShader = m_ColorShader; break;
+                        case 2: newShader = m_EnvMapShader; break;
+                    }
+                    
+                    if (newShader) {
+                        obj->setCurrentShader(newShader);
                     }
                 }
 
-                // Options spécifiques au shader
+                // Paramètres du matériau
+                Material mat = obj->getMaterial();
+                bool materialChanged = false;
+
+                // Afficher les contrôles appropriés selon le shader actuel
                 if (current_shader == 1) { // Color shader
-                    Material mat = obj->getMaterial();
                     if (ImGui::ColorEdit3("Color", mat.diffuse)) {
-                        obj->setMaterial(mat);
+                        materialChanged = true;
+                    }
+                } else {
+                    if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
+                    if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
+                    if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
+                }
+
+                if (ImGui::Checkbox("Emissive", &mat.isEmissive)) materialChanged = true;
+
+                if (materialChanged) {
+                    obj->setMaterial(mat);
+                    
+                    // Mise à jour immédiate des uniformes
+                    GLShader* shader = obj->getCurrentShader();
+                    if (shader) {
+                        shader->Use();
+                        shader->SetVec3("u_material.diffuseColor", mat.diffuse);
+                        shader->SetVec3("u_material.specularColor", mat.specular);
+                        shader->SetFloat("u_material.shininess", mat.shininess);
+                        shader->SetBool("u_material.isEmissive", mat.isEmissive);
                     }
                 }
 
@@ -252,14 +282,125 @@ void UI::ShowShaderSettings() {
     }
 }
 
-void UI::SetSceneObjects(std::vector<Mesh*>& objects, Mesh* sun, std::vector<Planet>& planets) {
-    m_SceneObjects = &objects;
+void UI::SetSceneObjects(const std::vector<Mesh*>& objects, Mesh* sun, const std::vector<Planet>& planets) {
+    m_SceneObjects = const_cast<std::vector<Mesh*>*>(&objects);
     m_Sun = sun;
-    m_Planets = &planets;
+    m_Planets = const_cast<std::vector<Planet>*>(&planets);
 }
 
 void UI::SetShaders(GLShader* basic, GLShader* color, GLShader* envmap) {
     m_BasicShader = basic;
     m_ColorShader = color;
     m_EnvMapShader = envmap;
+}
+
+void UI::ShowSceneManagerWindow() {
+    if (ImGui::Begin("Scene Manager")) {
+        auto& sceneManager = SceneManager::GetInstance();
+        std::string currentScene = sceneManager.GetActiveScene() ? 
+            sceneManager.GetActiveScene()->GetName() : "None";
+
+        if (ImGui::BeginCombo("Current Scene", currentScene.c_str())) {
+            auto sceneNames = sceneManager.GetSceneNames();
+            for (const auto& name : sceneNames) {
+                bool isSelected = (name == currentScene);
+                if (ImGui::Selectable(name.c_str(), isSelected)) {
+                    sceneManager.SetActiveScene(name);
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        // Boutons de gestion des scènes
+        if (ImGui::Button("New Scene")) {
+            m_ShowNewSceneDialog = true;
+        }
+        
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Delete Scene") && !currentScene.empty()) {
+            if (currentScene != "Solar System" && currentScene != "Demo Scene") {
+                sceneManager.RemoveScene(currentScene);
+            }
+        }
+
+        ImGui::Separator();
+
+        // Navigation entre les scènes
+        if (ImGui::Button("Previous Scene")) {
+            sceneManager.PreviousScene();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Next Scene")) {
+            sceneManager.NextScene();
+        }
+
+        // Afficher les contrôles de la scène active
+        if (sceneManager.GetActiveScene()) {
+            ImGui::Separator();
+            ShowSceneControls();
+        }
+    }
+    ImGui::End();
+}
+
+void UI::ShowNewSceneDialog() {
+    if (ImGui::Begin("New Scene", &m_ShowNewSceneDialog)) {
+        ImGui::InputText("Scene Name", m_NewSceneName, sizeof(m_NewSceneName));
+        
+        if (ImGui::Button("Create")) {
+            if (strlen(m_NewSceneName) > 0) {
+                auto& sceneManager = SceneManager::GetInstance();
+                m_ShowNewSceneDialog = false;
+                memset(m_NewSceneName, 0, sizeof(m_NewSceneName));
+            }
+        }
+        
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Cancel")) {
+            m_ShowNewSceneDialog = false;
+            memset(m_NewSceneName, 0, sizeof(m_NewSceneName));
+        }
+    }
+    ImGui::End();
+}
+
+void UI::ShowSceneControls() {
+    auto scene = SceneManager::GetInstance().GetActiveScene();
+    if (!scene) return;
+
+    ImGui::Text("Scene Objects");
+    
+    // Liste des objets dans la scène
+    if (ImGui::TreeNode("Objects")) {
+        const auto& objects = scene->GetObjects();
+        for (size_t i = 0; i < objects.size(); i++) {
+            Mesh* obj = objects[i];
+            if (ImGui::TreeNode((void*)(intptr_t)i, "Object %d", (int)i)) {
+                // Position
+                float pos[3];
+                memcpy(pos, obj->getPosition(), sizeof(float) * 3);
+                if (ImGui::DragFloat3("Position", pos, 0.1f)) {
+                    obj->setPosition(pos[0], pos[1], pos[2]);
+                }
+
+                // Scale
+                float scale[3];
+                memcpy(scale, obj->getScale(), sizeof(float) * 3);
+                if (ImGui::DragFloat3("Scale", scale, 0.1f)) {
+                    obj->setScale(scale[0], scale[1], scale[2]);
+                }
+
+                // Material
+                Material mat = obj->getMaterial();
+                if (ImGui::ColorEdit3("Color", mat.diffuse)) {
+                    obj->setMaterial(mat);
+                }
+
+                ImGui::TreePop();
+            }
+        }
+        ImGui::TreePop();
+    }
 }
