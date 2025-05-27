@@ -395,74 +395,158 @@ void UI::ShowSceneControls() {
     auto scene = SceneManager::GetInstance().GetActiveScene();
     if (!scene) return;
 
-    ImGui::Text("Scene Objects");
-    
-    // Liste des objets dans la scène
-    if (ImGui::TreeNode("Objects")) {
-        const auto& objects = scene->GetObjects();
-        for (size_t i = 0; i < objects.size(); i++) {
-            Mesh* obj = objects[i];
-            char label[32];
-            sprintf(label, "Object %zu", i);
-            
-            if (ImGui::TreeNode(label)) {
-                // Position
-                float pos[3];
-                memcpy(pos, obj->getPosition(), sizeof(float) * 3);
-                if (ImGui::DragFloat3("Position", pos, 0.1f)) {
-                    obj->setPosition(pos[0], pos[1], pos[2]);
-                }
+    if (ImGui::CollapsingHeader("Scene Objects")) {
+        if (ImGui::Button("Load 3D Model")) {
+            m_ShowLoadModelDialog = true;
+        }
 
-                // Scale
-                float scale[3];
-                memcpy(scale, obj->getScale(), sizeof(float) * 3);
-                if (ImGui::DragFloat3("Scale", scale, 0.1f)) {
-                    obj->setScale(scale[0], scale[1], scale[2]);
-                }
-
-                // Rotation (Nouveau)
-                static float rotation[3] = {0.0f, 0.0f, 0.0f};
-                if (ImGui::DragFloat3("Rotation", rotation, 1.0f)) {
-                    obj->setRotation(rotation[0], rotation[1], rotation[2]);
-                }
-
-                // Shader selection
-                GLShader* currentShader = obj->getCurrentShader();
-                GLShader* basicShader = &scene->GetBasicShader();
-                GLShader* colorShader = &scene->GetColorShader();
-                GLShader* envMapShader = &scene->GetEnvMapShader();
+        if (ImGui::TreeNode("Objects")) {
+            const auto& objects = scene->GetObjects();
+            for (size_t i = 0; i < objects.size(); i++) {
+                Mesh* obj = objects[i];
                 
-                int current_shader = 0;
-                if (currentShader == colorShader) current_shader = 1;
-                else if (currentShader == envMapShader) current_shader = 2;
-
-                if (ImGui::RadioButton("Basic", current_shader == 0)) {
-                    obj->setCurrentShader(basicShader);
+                // Vérifier si l'objet n'est pas le soleil ou une planète
+                bool isDeletable = true;
+                if (obj == m_Sun) {
+                    isDeletable = false;
                 }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("Color", current_shader == 1)) {
-                    obj->setCurrentShader(colorShader);
-                }
-                ImGui::SameLine();
-                if (ImGui::RadioButton("EnvMap", current_shader == 2)) {
-                    obj->setCurrentShader(envMapShader);
+                for (const auto& planet : *m_Planets) {
+                    if (planet.GetMesh() == obj) {
+                        isDeletable = false;
+                        break;
+                    }
                 }
 
-                // Material properties
-                Material mat = obj->getMaterial();
-                bool materialChanged = false;
+                char label[32];
+                sprintf(label, "Object %zu", i);
+                
+                if (ImGui::TreeNode(label)) {
+                    // Position
+                    float pos[3];
+                    memcpy(pos, obj->getPosition(), sizeof(float) * 3);
+                    if (ImGui::DragFloat3("Position", pos, 0.1f)) {
+                        obj->setPosition(pos[0], pos[1], pos[2]);
+                    }
 
-                if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
-                if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
-                if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
+                    // Scale
+                    float scale[3];
+                    memcpy(scale, obj->getScale(), sizeof(float) * 3);
+                    if (ImGui::DragFloat3("Scale", scale, 0.1f)) {
+                        obj->setScale(scale[0], scale[1], scale[2]);
+                    }
 
-                if (materialChanged) {
-                    obj->setMaterial(mat);
+                    // Rotation
+                    static float rotation[3] = {0.0f, 0.0f, 0.0f};
+                    if (ImGui::DragFloat3("Rotation", rotation, 1.0f)) {
+                        obj->setRotation(rotation[0], rotation[1], rotation[2]);
+                    }
+
+                    // Bouton Delete (seulement pour les objets non-essentiels)
+                    if (isDeletable) {
+                        if (ImGui::Button("Delete Object")) {
+                            scene->RemoveObject(obj);
+                            ImGui::TreePop();
+                            break;  // Sortir de la boucle car l'objet a été supprimé
+                        }
+                    }
+
+                    // Shader selection
+                    GLShader* currentShader = obj->getCurrentShader();
+                    GLShader* basicShader = &scene->GetBasicShader();
+                    GLShader* colorShader = &scene->GetColorShader();
+                    GLShader* envMapShader = &scene->GetEnvMapShader();
+                    
+                    int current_shader = 0;
+                    if (currentShader == colorShader) current_shader = 1;
+                    else if (currentShader == envMapShader) current_shader = 2;
+
+                    if (ImGui::RadioButton("Basic", current_shader == 0)) {
+                        obj->setCurrentShader(basicShader);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Color", current_shader == 1)) {
+                        obj->setCurrentShader(colorShader);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("EnvMap", current_shader == 2)) {
+                        obj->setCurrentShader(envMapShader);
+                    }
+
+                    // Material properties
+                    Material mat = obj->getMaterial();
+                    bool materialChanged = false;
+
+                    if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
+                    if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
+                    if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
+
+                    if (materialChanged) {
+                        obj->setMaterial(mat);
+                    }
+
+                    ImGui::TreePop();
                 }
+            }
+            ImGui::TreePop();
+        }
+    }
+    
+    if (m_ShowLoadModelDialog) {
+        ShowLoadModelDialog();
+    }
+}
 
-                ImGui::TreePop();
+void UI::ShowLoadModelDialog() {
+    if (ImGui::Begin("Load 3D Model", &m_ShowLoadModelDialog)) {
+        static char filepath[256] = "";
+        ImGui::InputText("Model Path", filepath, sizeof(filepath));
+
+        if (ImGui::Button("Browse...")) {
+            OPENFILENAMEA ofn;
+            char szFile[256] = { 0 };
+            
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = glfwGetWin32Window(m_Window);
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = "OBJ Files\0*.obj\0All Files\0*.*\0";
+            ofn.nFilterIndex = 1;
+            ofn.lpstrFileTitle = NULL;
+            ofn.nMaxFileTitle = 0;
+            ofn.lpstrInitialDir = NULL;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+            if (GetOpenFileNameA(&ofn)) {
+                strncpy(filepath, szFile, sizeof(filepath) - 1);
             }
         }
-        ImGui::TreePop();
+
+        ImGui::SameLine();
+
+        if (ImGui::Button("Load") && filepath[0] != '\0') {
+            auto& sceneManager = SceneManager::GetInstance();
+            Scene* currentScene = sceneManager.GetActiveScene();
+            
+            if (currentScene) {
+                Mesh* newMesh = new Mesh();
+                if (newMesh->loadFromOBJFile(filepath)) {
+                    newMesh->setPosition(0.0f, 0.0f, -5.0f);
+                    newMesh->setScale(1.0f, 1.0f, 1.0f);
+                    currentScene->AddObject(newMesh);
+                    m_ShowLoadModelDialog = false;
+                    memset(filepath, 0, sizeof(filepath));
+                } else {
+                    delete newMesh;
+                }
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            m_ShowLoadModelDialog = false;
+        }
+
+        ImGui::End();
     }
 }

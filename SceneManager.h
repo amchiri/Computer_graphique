@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <algorithm>  // Ajout pour std::find
 #include "GLShader.h"
 #include "Mesh.h"
 #include "Planet.h"
@@ -42,6 +43,22 @@ public:
     GLShader& GetBasicShader() { return m_basicShader; }
     GLShader& GetColorShader() { return m_colorShader; }
     GLShader& GetEnvMapShader() { return m_envMapShader; }
+
+    // Ajouter cette méthode
+    virtual void AddObject(Mesh* object) { 
+        if (object) {
+            m_objects.push_back(object);
+        }
+    }
+
+    // Ajouter cette méthode
+    virtual void RemoveObject(Mesh* object) {
+        auto it = std::find(m_objects.begin(), m_objects.end(), object);
+        if (it != m_objects.end()) {
+            delete *it;
+            m_objects.erase(it);
+        }
+    }
 
 protected:
     std::string m_name;

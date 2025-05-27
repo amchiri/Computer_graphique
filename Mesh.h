@@ -17,6 +17,7 @@ struct Vertex {
 struct Material {
     float diffuse[3] = {0.8f, 0.8f, 0.8f};
     float specular[3] = {1.0f, 1.0f, 1.0f};
+    float ambient[3] = {0.2f, 0.2f, 0.2f};  // Ajout du composant ambient
     float shininess = 32.0f;
     GLuint diffuseMap = 0;
     bool isEmissive = false;
@@ -70,4 +71,5 @@ private:
     
     void setupMesh();
     void updateShaderUniforms();  // Nouvelle méthode pour mettre à jour les uniformes
+    void calculateNormalsIfNeeded();  // Ajout de la déclaration de la fonction
 };

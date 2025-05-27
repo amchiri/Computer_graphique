@@ -5,6 +5,10 @@
 #include <GLFW/glfw3.h>
 // Ne pas inclure GL/gl.h
 
+#include <windows.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
 #include <vector>
 #include <memory>
 #include "Mesh.h"
@@ -29,6 +33,7 @@ private:
     void ShowSceneManagerWindow();
     void ShowSceneControls();
     void ShowNewSceneDialog();
+    void ShowLoadModelDialog(); // Added function to show load model dialog
 
     GLFWwindow* m_Window;
     int m_Width;
@@ -52,4 +57,6 @@ private:
     float m_LightIntensity = 1.0f;
     float* m_GlobalLightColor = nullptr;
     float* m_GlobalLightIntensity = nullptr;
+
+    bool m_ShowLoadModelDialog = false; // Added variable to manage load model dialog visibility
 };

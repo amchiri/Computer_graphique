@@ -4,6 +4,8 @@
 #include "tiny_obj_loader.h"
 #include <iostream>
 #include <cmath>
+#include <filesystem>
+#include <unordered_map>
 
 Mesh::Mesh() : VAO(0), VBO(0), EBO(0) {
     position[0] = position[1] = position[2] = 0.0f;
@@ -252,65 +254,248 @@ void Mesh::createSphere(float radius, int sectors, int stacks) {
     setupMesh();
 }
 
+
 bool Mesh::loadFromOBJFile(const char* filename) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
-
-    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename);
-
-    if (!warn.empty()) {
-        std::cout << "Warning: " << warn << std::endl;
-    }
-
-    if (!err.empty()) {
-        std::cerr << "Error: " << err << std::endl;
-    }
-
-    if (!ret) {
+    
+    // Obtenir le répertoire du fichier obj pour charger les textures relatives
+    std::string baseDir = std::filesystem::path(filename).parent_path().string();
+    
+    // Charger le fichier OBJ et MTL associé
+    bool ret = tinyobj::LoadObj(
+        &attrib, &shapes, &materials, &warn, &err,
+        filename, baseDir.c_str(),
+        true  // triangulate
+    );
+    
+    if (!ret || shapes.empty()) {
+        std::cerr << "Failed to load OBJ file: " << filename << std::endl;
+        if (!err.empty()) std::cerr << err << std::endl;
         return false;
     }
-
-    // Clear existing data
+    
+    if (!warn.empty()) {
+        std::cout << "OBJ loading warnings: " << warn << std::endl;
+    }
+    
     vertices.clear();
     indices.clear();
-
-    // Pour chaque shape dans le fichier
-    for (size_t s = 0; s < shapes.size(); s++) {
-        size_t index_offset = 0;
-        // Pour chaque face dans la shape
-        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
-            // Pour chaque vertex dans la face
-            for (size_t v = 0; v < 3; v++) {
-                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+    
+    // Map pour éviter les vertices dupliqués
+    std::map<std::tuple<int, int, int>, unsigned int> vertexMap;
+    unsigned int currentIndex = 0;
+    
+    // Charger le premier matériau disponible (amélioration possible : gérer plusieurs matériaux)
+    if (!materials.empty()) {
+        const auto& mat = materials[0];
+        
+        // Couleurs du matériau
+        material.diffuse[0] = mat.diffuse[0];
+        material.diffuse[1] = mat.diffuse[1];
+        material.diffuse[2] = mat.diffuse[2];
+        
+        material.specular[0] = mat.specular[0];
+        material.specular[1] = mat.specular[1];
+        material.specular[2] = mat.specular[2];
+        
+        material.ambient[0] = mat.ambient[0];
+        material.ambient[1] = mat.ambient[1];
+        material.ambient[2] = mat.ambient[2];
+        
+        // Propriétés du matériau
+        material.shininess = mat.shininess;
+        material.specularStrength = mat.shininess > 0 ? 1.0f : 0.0f;
+        
+        // Charger les textures si elles existent
+        if (!mat.diffuse_texname.empty()) {
+            // Construire le chemin en utilisant std::filesystem
+            std::filesystem::path texPath = std::filesystem::path(baseDir) / mat.diffuse_texname;
+            std::string texPathStr = texPath.string();
+            
+            // Vérifier si le fichier existe avant de tenter de le charger
+            if (std::filesystem::exists(texPath)) {
+                if (!loadTexture(texPathStr.c_str())) {
+                    std::cerr << "Failed to load texture: " << texPathStr << std::endl;
+                }
+            } else {
+                // Essayer aussi le chemin relatif simple et d'autres variations
+                std::vector<std::string> possiblePaths = {
+                    (std::filesystem::path(filename).parent_path() / mat.diffuse_texname).string(),
+                    mat.diffuse_texname,  // Chemin absolu possible
+                    (std::filesystem::path(baseDir) / std::filesystem::path(mat.diffuse_texname).filename()).string()
+                };
                 
-                Vertex vertex;
-                // Position
-                vertex.position[0] = attrib.vertices[3 * idx.vertex_index + 0];
-                vertex.position[1] = attrib.vertices[3 * idx.vertex_index + 1];
-                vertex.position[2] = attrib.vertices[3 * idx.vertex_index + 2];
-                
-                // Normal
-                if (idx.normal_index >= 0) {
-                    vertex.normal[0] = attrib.normals[3 * idx.normal_index + 0];
-                    vertex.normal[1] = attrib.normals[3 * idx.normal_index + 1];
-                    vertex.normal[2] = attrib.normals[3 * idx.normal_index + 2];
+                bool textureLoaded = false;
+                for (const auto& path : possiblePaths) {
+                    if (std::filesystem::exists(path)) {
+                        if (loadTexture(path.c_str())) {
+                            textureLoaded = true;
+                            break;
+                        }
+                    }
                 }
                 
-                // UV
-                if (idx.texcoord_index >= 0) {
-                    vertex.uv[0] = attrib.texcoords[2 * idx.texcoord_index + 0];
-                    vertex.uv[1] = attrib.texcoords[2 * idx.texcoord_index + 1];
+                if (!textureLoaded) {
+                    std::cerr << "Texture file not found: " << mat.diffuse_texname << std::endl;
+                    std::cerr << "Searched paths:" << std::endl;
+                    for (const auto& path : possiblePaths) {
+                        std::cerr << "  - " << path << std::endl;
+                    }
                 }
-                
-                vertices.push_back(vertex);
-                indices.push_back(indices.size());
             }
-            index_offset += 3;
         }
     }
-
+    
+    // Pour chaque forme dans le fichier
+    for (size_t s = 0; s < shapes.size(); s++) {
+        size_t index_offset = 0;
+        
+        // Pour chaque face de la forme
+        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+            int fv = shapes[s].mesh.num_face_vertices[f];
+            
+            // Pour chaque vertex dans la face
+            for (size_t v = 0; v < fv; v++) {
+                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                
+                // Créer une clé unique pour ce vertex basée sur ses indices
+                auto key = std::make_tuple(idx.vertex_index, idx.normal_index, idx.texcoord_index);
+                
+                // Vérifier si ce vertex existe déjà
+                auto it = vertexMap.find(key);
+                if (it != vertexMap.end()) {
+                    // Vertex existe déjà, utiliser son index
+                    indices.push_back(it->second);
+                } else {
+                    // Nouveau vertex, le créer
+                    Vertex vertex;
+                    
+                    // Position
+                    if (idx.vertex_index >= 0 && idx.vertex_index < static_cast<int>(attrib.vertices.size() / 3)) {
+                        vertex.position[0] = attrib.vertices[3 * idx.vertex_index + 0];
+                        vertex.position[1] = attrib.vertices[3 * idx.vertex_index + 1];
+                        vertex.position[2] = attrib.vertices[3 * idx.vertex_index + 2];
+                    } else {
+                        vertex.position[0] = vertex.position[1] = vertex.position[2] = 0.0f;
+                    }
+                    
+                    // Normal
+                    if (idx.normal_index >= 0 && idx.normal_index < static_cast<int>(attrib.normals.size() / 3)) {
+                        vertex.normal[0] = attrib.normals[3 * idx.normal_index + 0];
+                        vertex.normal[1] = attrib.normals[3 * idx.normal_index + 1];
+                        vertex.normal[2] = attrib.normals[3 * idx.normal_index + 2];
+                    } else {
+                        // Si pas de normale, on la calculera plus tard ou on met une valeur par défaut
+                        vertex.normal[0] = 0.0f;
+                        vertex.normal[1] = 0.0f;
+                        vertex.normal[2] = 1.0f;  // Normal pointant vers Z+
+                    }
+                    
+                    // Texture coordinates - CORRECTION IMPORTANTE
+                    if (idx.texcoord_index >= 0 && idx.texcoord_index < static_cast<int>(attrib.texcoords.size() / 2)) {
+                        vertex.uv[0] = attrib.texcoords[2 * idx.texcoord_index + 0];
+                        // INVERSION DE LA COORDONNÉE V POUR CORRIGER L'ORIENTATION
+                        vertex.uv[1] = 1.0f - attrib.texcoords[2 * idx.texcoord_index + 1];
+                    } else {
+                        vertex.uv[0] = vertex.uv[1] = 0.0f;
+                    }
+                    
+                    vertices.push_back(vertex);
+                    vertexMap[key] = currentIndex;
+                    indices.push_back(currentIndex);
+                    currentIndex++;
+                }
+            }
+            index_offset += fv;
+        }
+    }
+    
+    // Calculer les normales si elles sont manquantes
+    calculateNormalsIfNeeded();
+    
+    std::cout << "Loaded mesh with " << vertices.size() << " vertices and " 
+              << indices.size() / 3 << " triangles" << std::endl;
+    
     setupMesh();
     return true;
+}
+
+// Fonction helper pour calculer les normales manquantes
+void Mesh::calculateNormalsIfNeeded() {
+    // Vérifier si on a besoin de calculer les normales
+    bool needsNormals = false;
+    for (const auto& vertex : vertices) {
+        if (vertex.normal[0] == 0.0f && vertex.normal[1] == 0.0f && vertex.normal[2] == 0.0f) {
+            needsNormals = true;
+            break;
+        }
+    }
+    
+    if (!needsNormals) return;
+    
+    // Réinitialiser toutes les normales
+    for (auto& vertex : vertices) {
+        vertex.normal[0] = vertex.normal[1] = vertex.normal[2] = 0.0f;
+    }
+    
+    // Calculer les normales par triangle
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        if (i + 2 >= indices.size()) break;
+        
+        unsigned int i0 = indices[i];
+        unsigned int i1 = indices[i + 1];
+        unsigned int i2 = indices[i + 2];
+        
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) continue;
+        
+        // Calculer les vecteurs des arêtes
+        float v1[3] = {
+            vertices[i1].position[0] - vertices[i0].position[0],
+            vertices[i1].position[1] - vertices[i0].position[1],
+            vertices[i1].position[2] - vertices[i0].position[2]
+        };
+        
+        float v2[3] = {
+            vertices[i2].position[0] - vertices[i0].position[0],
+            vertices[i2].position[1] - vertices[i0].position[1],
+            vertices[i2].position[2] - vertices[i0].position[2]
+        };
+        
+        // Produit vectoriel pour obtenir la normale
+        float normal[3] = {
+            v1[1] * v2[2] - v1[2] * v2[1],
+            v1[2] * v2[0] - v1[0] * v2[2],
+            v1[0] * v2[1] - v1[1] * v2[0]
+        };
+        
+        // Normaliser
+        float length = sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+        if (length > 0.0f) {
+            normal[0] /= length;
+            normal[1] /= length;
+            normal[2] /= length;
+        }
+        
+        // Ajouter aux vertices du triangle
+        for (int j = 0; j < 3; j++) {
+            vertices[indices[i + j]].normal[0] += normal[0];
+            vertices[indices[i + j]].normal[1] += normal[1];
+            vertices[indices[i + j]].normal[2] += normal[2];
+        }
+    }
+    
+    // Renormaliser les normales finales
+    for (auto& vertex : vertices) {
+        float length = sqrt(vertex.normal[0] * vertex.normal[0] + 
+                           vertex.normal[1] * vertex.normal[1] + 
+                           vertex.normal[2] * vertex.normal[2]);
+        if (length > 0.0f) {
+            vertex.normal[0] /= length;
+            vertex.normal[1] /= length;
+            vertex.normal[2] /= length;
+        }
+    }
 }
