@@ -5,11 +5,6 @@
 #include <GLFW/glfw3.h>
 
 #include <iostream>
-#include <vector>
-#include <cmath>
-#include <string>
-#include <filesystem>
-#include <map>
 #include <memory>
 
 #include "GLShader.h"
@@ -30,99 +25,72 @@ std::unique_ptr<UI> g_UI;
 std::unique_ptr<Skybox> g_Skybox;
 std::unique_ptr<CameraController> g_Camera;
 SceneManager* g_SceneManager = nullptr;
-
-GLShader* g_BasicShader = nullptr;
-GLShader* g_ColorShader = nullptr;
-GLShader* g_EnvMapShader = nullptr;
 GLFWwindow* g_Window = nullptr;
 
 // Paramètres de rendu
 int width = 1200, height = 900;
-float fov = 60 * (3.14159f / 180.0f);
-float cam_far = 1000.0f;
-float cam_near = 0.1f;
+const float FOV = 60.0f * (3.14159f / 180.0f);
+const float CAM_FAR = 1000.0f;
+const float CAM_NEAR = 0.1f;
 
-// Variables d'éclairage
-float light_color[3] = { 1.0f, 1.0f, 1.0f };
-float light_intensity = 1.0f;
-
-// Variables de temps et debug
+// Variables de temps
 float fps = 0.0f;
 float elapsed_time = 0.0f;
 float last_frame_time = 0.0f;
-
-// Prototypes de fonctions
-void createSkybox();
-void initializeScenes();
 
 void processInput(GLFWwindow* window) {
     if (g_Camera) {
         g_Camera->Update(elapsed_time);
     }
 
-    // Changement de scène avec les touches 1, 2, etc.
-    static bool key1_pressed = false;
-    static bool key2_pressed = false;
-    static bool keyN_pressed = false;
-    static bool keyP_pressed = false;
-
-    if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS && !key1_pressed) {
-        key1_pressed = true;
-        if (g_SceneManager) {
-            g_SceneManager->SetActiveScene("Solar System");
-            std::cout << "Switched to Solar System scene" << std::endl;
+    // Gestion des touches pour changement de scène
+    static bool key_states[4] = {false}; // 1, 2, N, P
+    
+    struct KeyMapping {
+        int key;
+        int index;
+        const char* scene_name;
+        void (SceneManager::*action)();
+    };
+    
+    KeyMapping mappings[] = {
+        {GLFW_KEY_1, 0, "Solar System", nullptr},
+        {GLFW_KEY_2, 1, "Demo Scene", nullptr},
+        {GLFW_KEY_N, 2, nullptr, &SceneManager::NextScene},
+        {GLFW_KEY_P, 3, nullptr, &SceneManager::PreviousScene}
+    };
+    
+    for (auto& mapping : mappings) {
+        bool pressed = glfwGetKey(window, mapping.key) == GLFW_PRESS;
+        
+        if (pressed && !key_states[mapping.index] && g_SceneManager) {
+            if (mapping.scene_name) {
+                g_SceneManager->SetActiveScene(mapping.scene_name);
+                std::cout << "Switched to " << mapping.scene_name << " scene" << std::endl;
+            } else if (mapping.action) {
+                (g_SceneManager->*mapping.action)();
+                std::cout << "Scene changed" << std::endl;
+            }
         }
-    } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_RELEASE) {
-        key1_pressed = false;
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS && !key2_pressed) {
-        key2_pressed = true;
-        if (g_SceneManager) {
-            g_SceneManager->SetActiveScene("Demo Scene");
-            std::cout << "Switched to Demo scene" << std::endl;
-        }
-    } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_RELEASE) {
-        key2_pressed = false;
-    }
-
-    // Navigation avec N (Next) et P (Previous)
-    if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS && !keyN_pressed) {
-        keyN_pressed = true;
-        if (g_SceneManager) {
-            g_SceneManager->NextScene();
-            std::cout << "Switched to next scene" << std::endl;
-        }
-    } else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_RELEASE) {
-        keyN_pressed = false;
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS && !keyP_pressed) {
-        keyP_pressed = true;
-        if (g_SceneManager) {
-            g_SceneManager->PreviousScene();
-            std::cout << "Switched to previous scene" << std::endl;
-        }
-    } else if (glfwGetKey(window, GLFW_KEY_P) == GLFW_RELEASE) {
-        keyP_pressed = false;
+        key_states[mapping.index] = pressed;
     }
 }
 
 void Render() {
-    // Calcul du FPS
+    // Calcul du FPS et temps écoulé
     float current_time = glfwGetTime();
     elapsed_time = current_time - last_frame_time;
     last_frame_time = current_time;
     fps = 1.0f / elapsed_time;
 
-    // Configuration de rendu
+    // Configuration OpenGL
     glViewport(0, 0, width, height);
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Matrices de projection et vue
-    Mat4 projectionMatrix = Mat4::perspective(fov, (float)width / height, cam_near, cam_far);
+    // Matrices de transformation
+    Mat4 projectionMatrix = Mat4::perspective(FOV, (float)width / height, CAM_NEAR, CAM_FAR);
     Mat4 viewMatrix;
     
     if (g_Camera) {
@@ -138,10 +106,10 @@ void Render() {
         viewMatrix = Mat4::lookAt(camPos, camTarget, camUp);
     }
 
-    // Mise à jour et rendu de la scène active
+    // Rendu de la scène active
     if (g_SceneManager) {
         g_SceneManager->Update(elapsed_time);
-        g_SceneManager->Render(projectionMatrix, viewMatrix, g_BasicShader, g_ColorShader, g_EnvMapShader);
+        g_SceneManager->Render(projectionMatrix, viewMatrix);
     }
 
     // Rendu de la skybox
@@ -150,36 +118,45 @@ void Render() {
     }
 
     // Interface utilisateur
-    glDisable(GL_FRAMEBUFFER_SRGB);
-    
-    // Mise à jour des données UI avec la scène active
     Scene* activeScene = g_SceneManager ? g_SceneManager->GetActiveScene() : nullptr;
     if (activeScene && g_UI) {
-        const std::vector<Mesh*>& sceneObjects = activeScene->GetObjects();
-        Mesh* sun = activeScene->GetSun();
-        const std::vector<Planet>& planets = activeScene->GetPlanets();
-        
-        g_UI->SetSceneObjects(sceneObjects, sun, planets);
+        g_UI->SetSceneObjects(
+            activeScene->GetObjects(), 
+            activeScene->GetSun(), 
+            activeScene->GetPlanets()
+        );
         g_UI->RenderUI(fps, g_Camera->GetPosition(), g_Camera->GetFront());
-        
     }
-    
-    glEnable(GL_FRAMEBUFFER_SRGB);
 }
 
-bool Initialise() {
-    // Configuration de la fenêtre
+bool initializeOpenGL() {
+    // Configuration de la fenêtre GLFW
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     
     g_Window = glfwCreateWindow(width, height, "OpenGL Scene Manager", nullptr, nullptr);
     if (!g_Window) {
         std::cerr << "Erreur : Impossible de créer la fenêtre GLFW" << std::endl;
-        glfwTerminate();
         return false;
     }
     glfwMakeContextCurrent(g_Window);
 
-    // Initialisation de la caméra
+    // Callback de redimensionnement
+    glfwSetFramebufferSizeCallback(g_Window, [](GLFWwindow*, int w, int h) {
+        width = w;
+        height = h;
+        glViewport(0, 0, width, height);
+    });
+
+    // Initialisation de GLEW
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Erreur : Impossible d'initialiser GLEW" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool initializeCamera() {
     g_Camera = std::make_unique<CameraController>(g_Window);
     if (!g_Camera) {
         std::cerr << "Failed to create camera controller" << std::endl;
@@ -192,52 +169,87 @@ bool Initialise() {
     g_Camera->SetRotation(-30.0f, -90.0f);
     g_Camera->Initialize();
 
-    // Callback de redimensionnement
-    glfwSetFramebufferSizeCallback(g_Window, [](GLFWwindow* window, int w, int h) {
-        width = w;
-        height = h;
-        glViewport(0, 0, width, height);
-    });
+    return true;
+}
 
-    // Initialisation de GLEW
-    if (glewInit() != GLEW_OK) {
-        std::cerr << "Erreur : Impossible d'initialiser GLEW" << std::endl;
-        return false;
-    }
-
-    // Chargement des shaders
+bool initializeShaders() {
     auto& rm = ResourceManager::Get();
     
-    if (!rm.LoadShader("basic", "Basic.vs", "Basic.fs") ||
-        !rm.LoadShader("color", "Color.vs", "Color.fs") ||
-        !rm.LoadShader("envmap", "EnvMap.vs", "EnvMap.fs")) {
-        std::cerr << "Failed to load shaders" << std::endl;
-        return false;
+    const char* shaders[][3] = {
+        {"basic", "Basic.vs", "Basic.fs"},
+        {"color", "Color.vs", "Color.fs"},
+        {"envmap", "EnvMap.vs", "EnvMap.fs"}
+    };
+    
+    for (auto& shader : shaders) {
+        if (!rm.LoadShader(shader[0], shader[1], shader[2])) {
+            std::cerr << "Failed to load shader: " << shader[0] << std::endl;
+            return false;
+        }
     }
 
-    g_BasicShader = rm.GetShader("basic");
-    g_ColorShader = rm.GetShader("color");
-    g_EnvMapShader = rm.GetShader("envmap");
+    return true;
+}
 
-    if (!g_BasicShader || !g_ColorShader || !g_EnvMapShader) {
-        std::cerr << "Failed to get shader pointers" << std::endl;
+bool initializeSkybox() {
+    g_Skybox = std::make_unique<Skybox>();
+    if (!g_Skybox->Initialize("space.png")) {
+        std::cerr << "Failed to initialize skybox" << std::endl;
         return false;
     }
+    return true;
+}
 
-    // Initialisation des objets de la scène
-    createSkybox();
-    initializeScenes();
+bool initializeScenes() {
+    g_SceneManager = &SceneManager::GetInstance();
+    
+    // Ajout des scènes
+    g_SceneManager->AddScene(std::make_unique<SolarSystemScene>());
+    g_SceneManager->AddScene(std::make_unique<DemoScene>());
+    
+    if (!g_SceneManager->Initialize()) {
+        std::cerr << "Failed to initialize scene manager" << std::endl;
+        return false;
+    }
+    
+    g_SceneManager->SetActiveScene("Solar System");
+    return true;
+}
 
-    // Initialisation de l'interface utilisateur
+bool initializeUI() {
+    auto& rm = ResourceManager::Get();
+    
     g_UI = std::make_unique<UI>(g_Window, width, height);
     g_UI->Initialize();
-    g_UI->SetShaders(g_BasicShader, g_ColorShader, g_EnvMapShader);
+    g_UI->SetShaders(
+        rm.GetShader("basic"), 
+        rm.GetShader("color"), 
+        rm.GetShader("envmap")
+    );
+    
+    // Configuration de l'éclairage par défaut
+    float light_color[3] = {1.0f, 1.0f, 1.0f};
+    float light_intensity = 1.0f;
     g_UI->SetLightParameters(light_color, &light_intensity);
 
+    return true;
+}
+
+bool Initialize() {
+    if (!initializeOpenGL() || 
+        !initializeCamera() || 
+        !initializeShaders() || 
+        !initializeSkybox() || 
+        !initializeScenes() || 
+        !initializeUI()) {
+        return false;
+    }
+
+    // Affichage des contrôles
     std::cout << "=== Scene Manager Initialized ===" << std::endl;
     std::cout << "Controls:" << std::endl;
-    std::cout << "1: Switch to Solar System Scene" << std::endl;
-    std::cout << "2: Switch to Demo Scene" << std::endl;
+    std::cout << "1: Solar System Scene" << std::endl;
+    std::cout << "2: Demo Scene" << std::endl;
     std::cout << "N: Next Scene" << std::endl;
     std::cout << "P: Previous Scene" << std::endl;
     std::cout << "=================================" << std::endl;
@@ -245,55 +257,24 @@ bool Initialise() {
     return true;
 }
 
-void createSkybox() {
-    g_Skybox = std::make_unique<Skybox>();
-    if (!g_Skybox->Initialize("space.png")) {
-        std::cerr << "Failed to initialize skybox" << std::endl;
-    }
-}
-
-void initializeScenes() {
-    g_SceneManager = &SceneManager::GetInstance();
-    
-    // Création et ajout de la scène du système solaire
-    auto solarSystemScene = std::make_unique<SolarSystemScene>();
-    g_SceneManager->AddScene(std::move(solarSystemScene));
-    
-    // Création et ajout de la scène de démonstration
-    auto demoScene = std::make_unique<DemoScene>();
-    g_SceneManager->AddScene(std::move(demoScene));
-    
-    // Initialisation de toutes les scènes
-    if (!g_SceneManager->Initialize()) {
-        std::cerr << "Failed to initialize scene manager" << std::endl;
-    }
-    
-    // Définir la scène du système solaire comme scène active par défaut
-    g_SceneManager->SetActiveScene("Solar System");
-}
-
-void Terminate() {
-    // Nettoyage du gestionnaire de scènes
+void Cleanup() {
     if (g_SceneManager) {
         g_SceneManager->Cleanup();
         g_SceneManager = nullptr;
     }
-
-    // Nettoyage des ressources
+    
     g_UI.reset();
     g_Skybox.reset();
     g_Camera.reset();
 }
 
 int main() {
-    // Initialisation de GLFW
     if (!glfwInit()) {
         std::cerr << "Erreur : Impossible d'initialiser GLFW" << std::endl;
         return -1;
     }
 
-    // Initialisation
-    if (!Initialise()) {
+    if (!Initialize()) {
         std::cerr << "Erreur : Impossible d'initialiser l'application" << std::endl;
         glfwTerminate();
         return -1;
@@ -310,8 +291,9 @@ int main() {
     }
 
     // Nettoyage
-    Terminate();
+    Cleanup();
     glfwDestroyWindow(g_Window);
     glfwTerminate();
+    
     return 0;
 }

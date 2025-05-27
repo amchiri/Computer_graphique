@@ -7,6 +7,7 @@
 #include <commdlg.h>
 #include <filesystem>
 #include <GL/glew.h>
+#include <algorithm>
 
 UI::UI(GLFWwindow* window, int width, int height) 
     : m_Window(window)
@@ -64,6 +65,17 @@ void UI::RenderUI(float fps, const float* cameraPos, const float* cameraDir) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    // Mettre à jour les objets de la scène courante
+    auto& sceneManager = SceneManager::GetInstance();
+    Scene* currentScene = sceneManager.GetActiveScene();
+    if (currentScene) {
+        SetSceneObjects(
+            currentScene->GetObjects(),
+            currentScene->GetSun(),
+            currentScene->GetPlanets()
+        );
+    }
+
     ShowMainWindow(fps, cameraPos, cameraDir);
     ShowSceneManagerWindow();
     if (m_ShowNewSceneDialog) {
@@ -82,9 +94,9 @@ void UI::ShowMainWindow(float fps, const float* cameraPos, const float* cameraDi
             ImGui::Text("Direction: (%.2f, %.2f, %.2f)", cameraDir[0], cameraDir[1], cameraDir[2]);
         }
         ImGui::Text("FPS: %.1f", fps);
-        ShowLightSettings();
         ShowObjectControls();
         ShowShaderSettings();
+        ShowSceneControls();
         ImGui::End();
     }
 }
@@ -98,28 +110,11 @@ void UI::SetLightParameters(float* lightColor, float* lightIntensity) {
     if (lightIntensity) m_LightIntensity = *lightIntensity;
 }
 
-void UI::ShowLightSettings() {
-    if (!m_ShowSettings || !m_Sun) return;
-
-    if (ImGui::ColorEdit3("Light Color", m_LightColor) && m_GlobalLightColor) {
-        memcpy(m_GlobalLightColor, m_LightColor, 3 * sizeof(float));
-    }
-
-    if (ImGui::SliderFloat("Light Intensity", &m_LightIntensity, 0.0f, 10.0f) && m_GlobalLightIntensity) {
-        *m_GlobalLightIntensity = m_LightIntensity;
-    }
-
-    float lightPos[3];
-    memcpy(lightPos, m_Sun->getPosition(), 3 * sizeof(float));
-    if (ImGui::SliderFloat3("Light Position", lightPos, -50.0f, 50.0f)) {
-        m_Sun->setPosition(lightPos[0], lightPos[1], lightPos[2]);
-    }
-}
 
 void UI::ShowObjectControls() {
     if (!m_SceneObjects || !m_Sun || !m_Planets) return;
 
-    if (ImGui::CollapsingHeader("Scene Objects")) {
+    if (ImGui::CollapsingHeader("Solar System Objects")) {
         // Contrôles du Soleil
         if (ImGui::TreeNode("Sun")) {
             float pos[3] = {m_Sun->getPosition()[0], m_Sun->getPosition()[1], m_Sun->getPosition()[2]};
@@ -197,82 +192,103 @@ void UI::ShowObjectControls() {
 }
 
 void UI::ShowShaderSettings() {
-    if (!m_SceneObjects || !m_BasicShader || !m_ColorShader || !m_EnvMapShader) return;
+    if (!m_SceneObjects) return;
 
     if (ImGui::CollapsingHeader("Shader Settings")) {
-        for (size_t i = 0; i < m_SceneObjects->size(); i++) {
-            Mesh* obj = (*m_SceneObjects)[i];
-            char label[32];
-            sprintf(label, "Object %zu", i);
-            
-            if (ImGui::TreeNode(label)) {
+        auto& sceneManager = SceneManager::GetInstance();
+        Scene* currentScene = sceneManager.GetActiveScene();
+        if (!currentScene) return;
+
+        // Contrôles pour chaque objet (soleil, planètes, etc.)
+        for (Mesh* obj : *m_SceneObjects) {
+            // Créer un label unique pour chaque objet
+            std::string label = (obj == m_Sun) ? "Sun" : "Object";
+            if (obj != m_Sun) {
+                // Chercher si c'est une planète
+                auto it = std::find_if(m_Planets->begin(), m_Planets->end(),
+                    [obj](const Planet& p) { return p.GetMesh() == obj; });
+                if (it != m_Planets->end()) {
+                    label = "Planet " + std::to_string(it - m_Planets->begin());
+                }
+            }
+
+            if (ImGui::TreeNode(label.c_str())) {
+                // Sélection du shader
                 GLShader* currentShader = obj->getCurrentShader();
-                int current_shader = 0;
+                GLShader* basicShader = &currentScene->GetBasicShader();
+                GLShader* colorShader = &currentScene->GetColorShader();
+                GLShader* envMapShader = &currentScene->GetEnvMapShader();
                 
-                if (currentShader == m_ColorShader) current_shader = 1;
-                else if (currentShader == m_EnvMapShader) current_shader = 2;
+                int current_shader = 0;
+                if (currentShader == colorShader) current_shader = 1;
+                else if (currentShader == envMapShader) current_shader = 2;
 
                 bool shaderChanged = false;
-                
                 if (ImGui::RadioButton("Basic", current_shader == 0)) {
                     current_shader = 0;
                     shaderChanged = true;
                 }
                 ImGui::SameLine();
-                
                 if (ImGui::RadioButton("Color", current_shader == 1)) {
                     current_shader = 1;
                     shaderChanged = true;
                 }
                 ImGui::SameLine();
-                
                 if (ImGui::RadioButton("EnvMap", current_shader == 2)) {
                     current_shader = 2;
                     shaderChanged = true;
                 }
 
-                // Mettre à jour le shader et ses uniformes
                 if (shaderChanged) {
-                    GLShader* newShader = nullptr;
                     switch (current_shader) {
-                        case 0: newShader = m_BasicShader; break;
-                        case 1: newShader = m_ColorShader; break;
-                        case 2: newShader = m_EnvMapShader; break;
-                    }
-                    
-                    if (newShader) {
-                        obj->setCurrentShader(newShader);
+                        case 0: obj->setCurrentShader(basicShader); break;
+                        case 1: obj->setCurrentShader(colorShader); break;
+                        case 2: obj->setCurrentShader(envMapShader); break;
                     }
                 }
 
-                // Paramètres du matériau
+                // Paramètres du matériau selon le shader
                 Material mat = obj->getMaterial();
                 bool materialChanged = false;
 
-                // Afficher les contrôles appropriés selon le shader actuel
-                if (current_shader == 1) { // Color shader
+                if (currentShader == colorShader) {
                     if (ImGui::ColorEdit3("Color", mat.diffuse)) {
                         materialChanged = true;
                     }
-                } else {
+                } 
+                else if (currentShader == envMapShader) {
+                    if (ImGui::ColorEdit3("Reflection Color", mat.specular)) {
+                        materialChanged = true;
+                    }
+                    if (ImGui::SliderFloat("Reflection Strength", &mat.specularStrength, 0.0f, 1.0f)) {
+                        materialChanged = true;
+                    }
+                }
+                else {
+                    // Paramètres pour le shader basic
                     if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
                     if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
                     if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
                 }
 
+                // Propriété émissive disponible pour tous les shaders
                 if (ImGui::Checkbox("Emissive", &mat.isEmissive)) materialChanged = true;
+                if (mat.isEmissive) {
+                    if (ImGui::ColorEdit3("Light Color", mat.lightColor)) materialChanged = true;
+                    if (ImGui::SliderFloat("Light Intensity", &mat.emissiveIntensity, 0.0f, 10.0f)) materialChanged = true;
+                }
 
                 if (materialChanged) {
                     obj->setMaterial(mat);
-                    
-                    // Mise à jour immédiate des uniformes
-                    GLShader* shader = obj->getCurrentShader();
-                    if (shader) {
+                    if (GLShader* shader = obj->getCurrentShader()) {
                         shader->Use();
                         shader->SetVec3("u_material.diffuseColor", mat.diffuse);
                         shader->SetVec3("u_material.specularColor", mat.specular);
                         shader->SetFloat("u_material.shininess", mat.shininess);
                         shader->SetBool("u_material.isEmissive", mat.isEmissive);
+                        shader->SetFloat("u_material.emissiveIntensity", mat.emissiveIntensity);
+                        shader->SetVec3("u_material.lightColor", mat.lightColor);
+                        shader->SetFloat("u_material.specularStrength", mat.specularStrength);
                     }
                 }
 
@@ -334,23 +350,32 @@ void UI::ShowSceneManagerWindow() {
         if (ImGui::Button("Next Scene")) {
             sceneManager.NextScene();
         }
-
-        // Afficher les contrôles de la scène active
-        if (sceneManager.GetActiveScene()) {
-            ImGui::Separator();
-            ShowSceneControls();
-        }
     }
     ImGui::End();
 }
 
 void UI::ShowNewSceneDialog() {
     if (ImGui::Begin("New Scene", &m_ShowNewSceneDialog)) {
-        ImGui::InputText("Scene Name", m_NewSceneName, sizeof(m_NewSceneName));
+        char tempName[256] = {0};
+        if (strlen(m_NewSceneName) < sizeof(tempName)) {
+            strcpy(tempName, m_NewSceneName);
+        }
+        
+        if (ImGui::InputText("Scene Name", tempName, sizeof(tempName)-1)) {
+            strncpy(m_NewSceneName, tempName, sizeof(m_NewSceneName)-1);
+            m_NewSceneName[sizeof(m_NewSceneName)-1] = '\0';
+        }
         
         if (ImGui::Button("Create")) {
             if (strlen(m_NewSceneName) > 0) {
                 auto& sceneManager = SceneManager::GetInstance();
+                // Créer une nouvelle scène vide au lieu d'une copie de DemoScene
+                auto newScene = std::make_unique<EmptyScene>(m_NewSceneName);
+                if (newScene->Initialize()) {
+                    sceneManager.AddScene(std::move(newScene));
+                    sceneManager.SetActiveScene(m_NewSceneName);
+                }
+                
                 m_ShowNewSceneDialog = false;
                 memset(m_NewSceneName, 0, sizeof(m_NewSceneName));
             }
@@ -377,7 +402,10 @@ void UI::ShowSceneControls() {
         const auto& objects = scene->GetObjects();
         for (size_t i = 0; i < objects.size(); i++) {
             Mesh* obj = objects[i];
-            if (ImGui::TreeNode((void*)(intptr_t)i, "Object %d", (int)i)) {
+            char label[32];
+            sprintf(label, "Object %zu", i);
+            
+            if (ImGui::TreeNode(label)) {
                 // Position
                 float pos[3];
                 memcpy(pos, obj->getPosition(), sizeof(float) * 3);
@@ -392,9 +420,43 @@ void UI::ShowSceneControls() {
                     obj->setScale(scale[0], scale[1], scale[2]);
                 }
 
-                // Material
+                // Rotation (Nouveau)
+                static float rotation[3] = {0.0f, 0.0f, 0.0f};
+                if (ImGui::DragFloat3("Rotation", rotation, 1.0f)) {
+                    obj->setRotation(rotation[0], rotation[1], rotation[2]);
+                }
+
+                // Shader selection
+                GLShader* currentShader = obj->getCurrentShader();
+                GLShader* basicShader = &scene->GetBasicShader();
+                GLShader* colorShader = &scene->GetColorShader();
+                GLShader* envMapShader = &scene->GetEnvMapShader();
+                
+                int current_shader = 0;
+                if (currentShader == colorShader) current_shader = 1;
+                else if (currentShader == envMapShader) current_shader = 2;
+
+                if (ImGui::RadioButton("Basic", current_shader == 0)) {
+                    obj->setCurrentShader(basicShader);
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Color", current_shader == 1)) {
+                    obj->setCurrentShader(colorShader);
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("EnvMap", current_shader == 2)) {
+                    obj->setCurrentShader(envMapShader);
+                }
+
+                // Material properties
                 Material mat = obj->getMaterial();
-                if (ImGui::ColorEdit3("Color", mat.diffuse)) {
+                bool materialChanged = false;
+
+                if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
+                if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
+                if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
+
+                if (materialChanged) {
                     obj->setMaterial(mat);
                 }
 

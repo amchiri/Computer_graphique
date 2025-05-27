@@ -24,7 +24,6 @@ public:
 
 private:
     void ShowMainWindow(float fps, const float* cameraPos, const float* cameraFront);
-    void ShowLightSettings();
     void ShowObjectControls();
     void ShowShaderSettings();
     void ShowSceneManagerWindow();

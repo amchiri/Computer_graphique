@@ -20,6 +20,9 @@ struct Material {
     float shininess = 32.0f;
     GLuint diffuseMap = 0;
     bool isEmissive = false;
+    float emissiveIntensity = 1.0f;  // Nouvelle propriété
+    float lightColor[3] = {1.0f, 1.0f, 1.0f};  // Nouvelle propriété
+    float specularStrength = 0.5f;  // Ajouté pour correspondre au shader
 };
 
 class Mesh {

@@ -1,6 +1,42 @@
 #include "SceneManager.h"
 #include <iostream>
 #include <algorithm>
+#include <cstdio>  // Pour sprintf
+#include "CameraController.h" // Ajouté pour CameraController
+
+// Définir MAX_LIGHTS en haut du fichier
+#define MAX_LIGHTS 10
+
+// ==================== Scene Implementation ====================
+
+bool Scene::InitializeShaders() {
+    // Charger les shaders de base pour la scène
+    if (!m_basicShader.LoadVertexShader("Basic.vs") ||
+        !m_basicShader.LoadFragmentShader("Basic.fs") ||
+        !m_basicShader.Create()) {
+        return false;
+    }
+
+    if (!m_colorShader.LoadVertexShader("Color.vs") ||
+        !m_colorShader.LoadFragmentShader("Color.fs") ||
+        !m_colorShader.Create()) {
+        return false;
+    }
+
+    if (!m_envMapShader.LoadVertexShader("EnvMap.vs") ||
+        !m_envMapShader.LoadFragmentShader("EnvMap.fs") ||
+        !m_envMapShader.Create()) {
+        return false;
+    }
+
+    return true;
+}
+
+void Scene::CleanupShaders() {
+    m_basicShader.Destroy();
+    m_colorShader.Destroy();
+    m_envMapShader.Destroy();
+}
 
 // ==================== SolarSystemScene Implementation ====================
 
@@ -9,6 +45,10 @@ SolarSystemScene::~SolarSystemScene() {
 }
 
 bool SolarSystemScene::Initialize() {
+    if (!InitializeShaders()) {
+        return false;
+    }
+    
     try {
         createSun();
         createPlanets();
@@ -24,23 +64,23 @@ void SolarSystemScene::Update(float deltaTime) {
     updatePlanets(deltaTime);
 }
 
-void SolarSystemScene::Render(const Mat4& projection, const Mat4& view, 
-                             GLShader* basicShader, GLShader* colorShader, GLShader* envMapShader) {
-    // Variables d'éclairage (devraient être passées en paramètre dans une vraie implémentation)
-    static float light_color[3] = { 1.0f, 1.0f, 1.0f };
-    static float light_intensity = 1.0f;
+void SolarSystemScene::Render(const Mat4& projection, const Mat4& view) {
+    // Obtenir la position de la caméra pour les calculs de spécularité
+    extern CameraController* g_Camera;
+    const float* cameraPos = g_Camera->GetPosition();
 
     for (Mesh* obj : m_objects) {
-        GLShader* currentShader = obj->getCurrentShader();
-        if (!currentShader) {
-            currentShader = basicShader;
-            obj->setCurrentShader(currentShader);
+        GLShader* shader = nullptr;
+        if (obj == m_sun) {
+            shader = &GetBasicShader();
+        } else {
+            shader = &GetBasicShader();  // Par défaut
         }
-
-        GLuint program = currentShader->GetProgram();
+        
+        GLuint program = shader->GetProgram();
         glUseProgram(program);
 
-        // Matrices communes
+        // Matrices communes à tous les shaders
         GLint loc_proj = glGetUniformLocation(program, "u_projection");
         if (loc_proj >= 0) glUniformMatrix4fv(loc_proj, 1, GL_FALSE, projection.data());
         
@@ -53,50 +93,124 @@ void SolarSystemScene::Render(const Mat4& projection, const Mat4& view,
         GLint loc_transform = glGetUniformLocation(program, "u_transform");
         if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
 
-        // Configuration spécifique selon le shader
-        if (currentShader == basicShader) {
-            // Éclairage
-            const float* sunPos = m_sun->getPosition();
-            GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
-            if (loc_lightDir >= 0) glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
-            
-            float lightDiffuse[3] = {
-                light_color[0] * light_intensity * 2.0f,
-                light_color[1] * light_intensity * 2.0f,
-                light_color[2] * light_intensity * 2.0f
-            };
-
-            GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
-            GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
-            GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
-            
-            if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
-            if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-            if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
-
-            // Matériau
-            float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
-            float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-            float matShininess = 20.0f;
-            
-            GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
-            GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
-            GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
-            
-            if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-            if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, matSpecular);
-            if (loc_matShininess >= 0) glUniform1f(loc_matShininess, matShininess);
-
-            // Objets émissifs
-            GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
-            if (loc_isEmissive >= 0) {
-                bool isEmissive = (obj == m_sun);
-                glUniform1i(loc_isEmissive, isEmissive ? 1 : 0);
-            }
+        // Configuration spécifique selon le type de shader
+        if (shader == &GetBasicShader()) {
+            setupBasicShader(program, obj, m_lightColor, m_lightIntensity, cameraPos);
+        }
+        else if (shader == &GetColorShader()) {
+            setupColorShader(program, obj);
+        }
+        else if (shader == &GetEnvMapShader()) {
+            setupEnvMapShader(program, obj, cameraPos);
         }
 
-        obj->draw(*currentShader);
+        obj->draw(*shader);
     }
+}
+
+void SolarSystemScene::setupBasicShader(GLuint program, Mesh* obj, float* light_color, float light_intensity, const float* cameraPos) {
+    // Configuration de l'éclairage principal (le soleil)
+    if (m_sun) {
+        const float* sunPos = m_sun->getPosition();
+        GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
+        if (loc_lightDir >= 0) glUniform3f(loc_lightDir, sunPos[0], sunPos[1], sunPos[2]);
+    }
+    
+    float lightDiffuse[3] = {
+        light_color[0] * light_intensity * 2.0f,
+        light_color[1] * light_intensity * 2.0f,
+        light_color[2] * light_intensity * 2.0f
+    };
+
+    GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
+    GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
+    GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
+    
+    if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
+    if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+    if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
+
+    // Position de la caméra pour les calculs de spécularité
+    GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+    if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, cameraPos);
+
+    // Configuration des lumières émissives multiples
+    std::vector<Mesh*> emissiveLights;
+    if (m_sun && m_sun->getMaterial().isEmissive) {
+        emissiveLights.push_back(m_sun);
+    }
+    
+    // Ajouter d'autres objets émissifs de la scène
+    for (Mesh* meshObj : m_objects) {
+        if (meshObj != m_sun && meshObj->getMaterial().isEmissive) {
+            emissiveLights.push_back(meshObj);
+        }
+    }
+
+    int numLights = std::min((int)emissiveLights.size(), (int)MAX_LIGHTS);
+    GLint loc_numLights = glGetUniformLocation(program, "u_numEmissiveLights");
+    if (loc_numLights >= 0) glUniform1i(loc_numLights, numLights);
+    
+    for (size_t i = 0; i < emissiveLights.size() && i < MAX_LIGHTS; i++) {
+        const auto& light = emissiveLights[i];
+        const auto& mat = light->getMaterial();
+        const float* pos = light->getPosition();
+
+        char buffer[64];
+        sprintf(buffer, "u_emissiveLights[%zu].position", i);
+        GLint loc_pos = glGetUniformLocation(program, buffer);
+        if (loc_pos >= 0) glUniform3fv(loc_pos, 1, pos);
+        
+        sprintf(buffer, "u_emissiveLights[%zu].color", i);
+        GLint loc_color = glGetUniformLocation(program, buffer);
+        if (loc_color >= 0) glUniform3fv(loc_color, 1, mat.lightColor);
+        
+        sprintf(buffer, "u_emissiveLights[%zu].intensity", i);
+        GLint loc_lightIntensity = glGetUniformLocation(program, buffer);
+        if (loc_lightIntensity >= 0) glUniform1f(loc_lightIntensity, mat.emissiveIntensity);
+    }
+
+    // Configuration du matériau de l'objet
+    const Material& mat = obj->getMaterial();
+    
+    GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+    GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+    GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+    GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
+    GLint loc_emissiveIntensity = glGetUniformLocation(program, "u_material.emissiveIntensity");
+    GLint loc_lightColor = glGetUniformLocation(program, "u_material.lightColor");
+    
+    if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
+    if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
+    if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
+    if (loc_isEmissive >= 0) glUniform1i(loc_isEmissive, mat.isEmissive ? 1 : 0);
+    if (loc_emissiveIntensity >= 0) glUniform1f(loc_emissiveIntensity, mat.emissiveIntensity);
+    if (loc_lightColor >= 0) glUniform3fv(loc_lightColor, 1, mat.lightColor);
+}
+
+void SolarSystemScene::setupColorShader(GLuint program, Mesh* obj) {
+    const Material& mat = obj->getMaterial();
+    GLint loc_color = glGetUniformLocation(program, "u_color");
+    if (loc_color >= 0) {
+        glUniform3fv(loc_color, 1, mat.diffuse);
+    }
+}
+
+void SolarSystemScene::setupEnvMapShader(GLuint program, Mesh* obj, const float* cameraPos) {
+    const Material& mat = obj->getMaterial();
+    
+    // Position de la caméra pour les réflections
+    GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+    if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, cameraPos);
+    
+    // Paramètres du matériau pour l'environment mapping
+    GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+    GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+    GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+    
+    if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
+    if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
+    if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
 }
 
 void SolarSystemScene::Cleanup() {
@@ -136,11 +250,17 @@ void SolarSystemScene::createSun() {
 
     Material sunMaterial;
     sunMaterial.diffuse[0] = sunMaterial.diffuse[1] = sunMaterial.diffuse[2] = 1.0f;
-    sunMaterial.specular[0] = sunMaterial.specular[1] = sunMaterial.specular[2] = 0.0f;
-    sunMaterial.shininess = 0.0f;
+    sunMaterial.specular[0] = sunMaterial.specular[1] = sunMaterial.specular[2] = 1.0f;
+    sunMaterial.shininess = 32.0f;
     sunMaterial.isEmissive = true;
+    sunMaterial.emissiveIntensity = 2.0f;
+    sunMaterial.lightColor[0] = sunMaterial.lightColor[1] = sunMaterial.lightColor[2] = 1.0f;
     m_sun->setMaterial(sunMaterial);
     m_sun->loadTexture("models/sun.png");
+
+    // Le soleil commence avec le shader basique par défaut
+    // Il peut être changé via l'interface utilisateur
+    m_sun->setCurrentShader(nullptr); // Sera assigné lors du premier rendu
 
     m_objects.push_back(m_sun);
 }
@@ -164,7 +284,12 @@ void SolarSystemScene::createPlanets() {
             planetData[i][1],    // vitesse de rotation
             planetData[i][2]     // taille
         );
-        m_objects.push_back(m_planets.back().GetMesh());
+        
+        // Chaque planète peut avoir son propre shader
+        Mesh* planetMesh = m_planets.back().GetMesh();
+        planetMesh->setCurrentShader(nullptr); // Sera assigné lors du premier rendu
+        
+        m_objects.push_back(planetMesh);
     }
 }
 
@@ -186,6 +311,8 @@ void SolarSystemScene::loadPlanetTextures() {
         planetMaterial.specular[0] = planetMaterial.specular[1] = planetMaterial.specular[2] = 0.5f;
         planetMaterial.shininess = 32.0f;
         planetMaterial.isEmissive = false;
+        planetMaterial.emissiveIntensity = 0.0f;
+        planetMaterial.lightColor[0] = planetMaterial.lightColor[1] = planetMaterial.lightColor[2] = 1.0f;
         planet.SetMaterial(planetMaterial);
         
         if (!planet.LoadTexture(textures[i])) {
@@ -207,6 +334,11 @@ DemoScene::~DemoScene() {
 }
 
 bool DemoScene::Initialize() {
+    // Ajouter l'initialisation des shaders !
+    if (!InitializeShaders()) {
+        return false;
+    }
+
     try {
         createDemoObjects();
         return true;
@@ -229,17 +361,28 @@ void DemoScene::Update(float deltaTime) {
     }
 }
 
-void DemoScene::Render(const Mat4& projection, const Mat4& view, 
-                      GLShader* basicShader, GLShader* colorShader, GLShader* envMapShader) {
+void DemoScene::Render(const Mat4& projection, const Mat4& view) {
     // Variables d'éclairage
     static float light_color[3] = { 1.0f, 1.0f, 1.0f };
     static float light_intensity = 1.0f;
     static float lightPos[3] = { 0.0f, 10.0f, 0.0f };
 
+    extern CameraController* g_Camera;
+    const float* cameraPos = g_Camera->GetPosition();
+
     for (Mesh* obj : m_objects) {
         GLShader* currentShader = obj->getCurrentShader();
+        
+        // Si l'objet n'a pas de shader assigné, utiliser le shader approprié par défaut
         if (!currentShader) {
-            currentShader = basicShader;
+            // Assigner différents shaders aux objets de demo pour montrer la variété
+            size_t objIndex = std::find(m_objects.begin(), m_objects.end(), obj) - m_objects.begin();
+            switch (objIndex % 3) {
+                case 0: currentShader = &GetColorShader(); break;
+                case 1: currentShader = &GetBasicShader(); break;
+                case 2: currentShader = &GetEnvMapShader(); break;
+                default: currentShader = &GetBasicShader(); break;
+            }
             obj->setCurrentShader(currentShader);
         }
 
@@ -260,51 +403,75 @@ void DemoScene::Render(const Mat4& projection, const Mat4& view,
         if (loc_transform >= 0) glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
 
         // Configuration spécifique selon le shader
-        if (currentShader == colorShader) {
-            GLint loc_color = glGetUniformLocation(program, "u_color");
-            if (loc_color >= 0) {
-                const Material& mat = obj->getMaterial();
-                glUniform3fv(loc_color, 1, mat.diffuse);
-            }
+        if (currentShader == &GetColorShader()) {
+            setupColorShaderDemo(program, obj);
         }
-        else if (currentShader == basicShader) {
-            // Éclairage
-            GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
-            if (loc_lightDir >= 0) glUniform3f(loc_lightDir, lightPos[0], lightPos[1], lightPos[2]);
-            
-            float lightDiffuse[3] = {
-                light_color[0] * light_intensity,
-                light_color[1] * light_intensity,
-                light_color[2] * light_intensity
-            };
-
-            GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
-            GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
-            GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
-            
-            if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
-            if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
-            if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
-
-            // Matériau
-            float matDiffuse[3] = {0.8f, 0.8f, 0.8f};
-            float matSpecular[3] = {1.0f, 1.0f, 1.0f};
-            float matShininess = 20.0f;
-            
-            GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
-            GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
-            GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
-            
-            if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, matDiffuse);
-            if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, matSpecular);
-            if (loc_matShininess >= 0) glUniform1f(loc_matShininess, matShininess);
-
-            GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
-            if (loc_isEmissive >= 0) glUniform1i(loc_isEmissive, 0);
+        else if (currentShader == &GetBasicShader()) {
+            setupBasicShaderDemo(program, obj, light_color, light_intensity, lightPos, cameraPos);
+        }
+        else if (currentShader == &GetEnvMapShader()) {
+            setupEnvMapShaderDemo(program, obj, cameraPos);
         }
 
         obj->draw(*currentShader);
     }
+}
+
+void DemoScene::setupColorShaderDemo(GLuint program, Mesh* obj) {
+    const Material& mat = obj->getMaterial();
+    GLint loc_color = glGetUniformLocation(program, "u_color");
+    if (loc_color >= 0) {
+        glUniform3fv(loc_color, 1, mat.diffuse);
+    }
+}
+
+void DemoScene::setupBasicShaderDemo(GLuint program, Mesh* obj, float* light_color, float light_intensity, float* lightPos, const float* cameraPos) {
+    // Éclairage
+    GLint loc_lightDir = glGetUniformLocation(program, "u_light.direction");
+    if (loc_lightDir >= 0) glUniform3f(loc_lightDir, lightPos[0], lightPos[1], lightPos[2]);
+    
+    float lightDiffuse[3] = {
+        light_color[0] * light_intensity,
+        light_color[1] * light_intensity,
+        light_color[2] * light_intensity
+    };
+
+    GLint loc_lightDiffuse = glGetUniformLocation(program, "u_light.diffuseColor");
+    GLint loc_lightSpecular = glGetUniformLocation(program, "u_light.specularColor");
+    GLint loc_intensity = glGetUniformLocation(program, "u_intensity");
+    GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+    
+    if (loc_intensity >= 0) glUniform1f(loc_intensity, light_intensity);
+    if (loc_lightDiffuse >= 0) glUniform3fv(loc_lightDiffuse, 1, lightDiffuse);
+    if (loc_lightSpecular >= 0) glUniform3fv(loc_lightSpecular, 1, lightDiffuse);
+    if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, cameraPos);
+
+    // Matériau
+    const Material& mat = obj->getMaterial();
+    GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+    GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+    GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+    GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
+    
+    if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
+    if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
+    if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
+    if (loc_isEmissive >= 0) glUniform1i(loc_isEmissive, mat.isEmissive ? 1 : 0);
+}
+
+void DemoScene::setupEnvMapShaderDemo(GLuint program, Mesh* obj, const float* cameraPos) {
+    const Material& mat = obj->getMaterial();
+    
+    GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
+    if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, cameraPos);
+    
+    GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+    GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+    GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+    
+    if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
+    if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
+    if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
 }
 
 void DemoScene::Cleanup() {
@@ -315,7 +482,7 @@ void DemoScene::Cleanup() {
 }
 
 void DemoScene::createDemoObjects() {
-    // Cube couleur (rouge)
+    // Cube couleur (rouge) - utilisera le shader de couleur
     Mesh* colorCube = new Mesh();
     colorCube->createSphere(1.0f, 32, 32);
     Material matColor;
@@ -324,11 +491,11 @@ void DemoScene::createDemoObjects() {
     matColor.shininess = 1.0f;
     matColor.isEmissive = false;
     colorCube->setMaterial(matColor);
-    colorCube->setPosition(-8, 0, 0);
-    colorCube->setCurrentShader(nullptr); // Sera défini lors du rendu
+    colorCube->setPosition(-8, 0, -10); // Ajout d'un Z négatif pour être devant la caméra
+    colorCube->setCurrentShader(nullptr); // Sera assigné lors du rendu
     m_objects.push_back(colorCube);
 
-    // Cube texturé
+    // Cube texturé - utilisera le shader basique
     Mesh* texCube = new Mesh();
     texCube->createSphere(1.0f, 32, 32);
     texCube->loadTexture("models/earth.png");
@@ -338,11 +505,11 @@ void DemoScene::createDemoObjects() {
     matTex.shininess = 16.0f;
     matTex.isEmissive = false;
     texCube->setMaterial(matTex);
-    texCube->setPosition(0, 0, 0);
+    texCube->setPosition(0, 0, -10);  // Ajout d'un Z négatif pour être devant la caméra
     texCube->setCurrentShader(nullptr);
     m_objects.push_back(texCube);
 
-    // Cube environment mapping
+    // Cube environment mapping - utilisera le shader d'environment mapping
     Mesh* envCube = new Mesh();
     envCube->createSphere(1.0f, 32, 32);
     Material matEnv;
@@ -351,7 +518,7 @@ void DemoScene::createDemoObjects() {
     matEnv.shininess = 64.0f;
     matEnv.isEmissive = false;
     envCube->setMaterial(matEnv);
-    envCube->setPosition(8, 0, 0);
+    envCube->setPosition(8, 0, -10);  // Ajout d'un Z négatif pour être devant la caméra
     envCube->setCurrentShader(nullptr);
     m_objects.push_back(envCube);
 }
@@ -378,6 +545,16 @@ bool SceneManager::SetActiveScene(const std::string& sceneName) {
 
     m_activeScene = it->second.get();
     m_activeSceneName = sceneName;
+
+    // Mise à jour de l'UI avec les objets de la nouvelle scène
+    if (g_UI) {
+        g_UI->SetSceneObjects(
+            m_activeScene->GetObjects(),
+            m_activeScene->GetSun(),
+            m_activeScene->GetPlanets()
+        );
+    }
+
     return true;
 }
 
@@ -404,10 +581,9 @@ void SceneManager::Update(float deltaTime) {
     }
 }
 
-void SceneManager::Render(const Mat4& projection, const Mat4& view,
-                         GLShader* basicShader, GLShader* colorShader, GLShader* envMapShader) {
+void SceneManager::Render(const Mat4& projection, const Mat4& view) {
     if (m_activeScene) {
-        m_activeScene->Render(projection, view, basicShader, colorShader, envMapShader);
+        m_activeScene->Render(projection, view);
     }
 }
 
