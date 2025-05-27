@@ -11,7 +11,8 @@ struct Material {
     bool isEmissive;
     float emissiveIntensity;
     vec3 lightColor;
-    float specularStrength;  // Ajouté pour correspondre au calcul
+    float specularStrength;
+    int illuminationModel;  // 0: Lambert, 1: Phong, 2: Blinn-Phong
 };
 
 // Définir une structure pour les lumières émissives
@@ -33,24 +34,57 @@ uniform int u_numEmissiveLights;
 
 out vec4 FragColor;
 
-vec3 CalculateLight(vec3 normal, vec3 fragPos, vec3 lightPos, vec3 lightColor, float lightIntensity) {
-    vec3 lightDir = normalize(lightPos - fragPos);
-    
-    // Diffuse plus intense
+vec3 CalculateLambert(vec3 normal, vec3 lightDir, vec3 lightColor) {
+    float diff = max(dot(normal, lightDir), 0.0);
+    return diff * lightColor;
+}
+
+vec3 CalculatePhong(vec3 normal, vec3 lightDir, vec3 viewDir, vec3 lightColor) {
+    // Diffuse (Lambert)
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 diffuse = diff * lightColor;
     
-    // Ajustement de la spécularité - ne pas remplacer la shininess par une valeur fixe
-    vec3 viewDir = normalize(u_viewPos - fragPos);
+    // Specular (Phong)
     vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), max(u_material.shininess, 1.0)); // Utiliser au moins 1.0
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), u_material.shininess);
     vec3 specular = spec * lightColor * u_material.specularStrength;
+    
+    return diffuse + specular;
+}
 
-    // Atténuation moins forte
+vec3 CalculateBlinnPhong(vec3 normal, vec3 lightDir, vec3 viewDir, vec3 lightColor) {
+    // Diffuse (Lambert)
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * lightColor;
+    
+    // Specular (Blinn-Phong)
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), u_material.shininess);
+    vec3 specular = spec * lightColor * u_material.specularStrength;
+    
+    return diffuse + specular;
+}
+
+vec3 CalculateLight(vec3 normal, vec3 fragPos, vec3 lightPos, vec3 lightColor, float lightIntensity) {
+    vec3 lightDir = normalize(lightPos - fragPos);
+    vec3 viewDir = normalize(u_viewPos - fragPos);
+    
+    vec3 result;
+    if (u_material.illuminationModel == 0) {
+        result = CalculateLambert(normal, lightDir, lightColor);
+    }
+    else if (u_material.illuminationModel == 1) {
+        result = CalculatePhong(normal, lightDir, viewDir, lightColor);
+    }
+    else {
+        result = CalculateBlinnPhong(normal, lightDir, viewDir, lightColor);
+    }
+    
+    // Atténuation
     float distance = length(lightPos - fragPos);
     float attenuation = 1.0 / (1.0 + 0.045 * distance + 0.0075 * distance * distance);
     
-    return (diffuse + specular) * attenuation * lightIntensity;
+    return result * attenuation * lightIntensity;
 }
 
 void main() {

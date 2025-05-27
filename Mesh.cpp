@@ -110,6 +110,12 @@ void Mesh::draw(GLShader& shader) {
     GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
     glUniform1i(loc_isEmissive, material.isEmissive ? 1 : 0);
 
+    // Choix du modèle d'illumination
+    GLint loc_illumModel = glGetUniformLocation(program, "u_material.illuminationModel");
+    if (loc_illumModel >= 0) {
+        glUniform1i(loc_illumModel, static_cast<int>(material.illuminationModel));
+    }
+
     // Dessiner la géométrie
     if (VAO) {
         glBindVertexArray(VAO);

@@ -24,6 +24,12 @@ struct Material {
     float emissiveIntensity = 1.0f;  // Nouvelle propriété
     float lightColor[3] = {1.0f, 1.0f, 1.0f};  // Nouvelle propriété
     float specularStrength = 0.5f;  // Ajouté pour correspondre au shader
+
+    enum class IlluminationModel {
+        LAMBERT = 0,
+        PHONG = 1,
+        BLINN_PHONG = 2
+    } illuminationModel = IlluminationModel::BLINN_PHONG;  // Par défaut
 };
 
 class Mesh {

@@ -267,7 +267,6 @@ void UI::ShowShaderSettings() {
                 else {
                     // Paramètres pour le shader basic
                     if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
-                    if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
                     if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
                 }
 
@@ -277,6 +276,20 @@ void UI::ShowShaderSettings() {
                     if (ImGui::ColorEdit3("Light Color", mat.lightColor)) materialChanged = true;
                     if (ImGui::SliderFloat("Light Intensity", &mat.emissiveIntensity, 0.0f, 10.0f)) materialChanged = true;
                 }
+
+                    const char* illuminationModels[] = {"Lambert", "Phong", "Blinn-Phong"};
+                    int currentModel = static_cast<int>(mat.illuminationModel);
+                    if (ImGui::Combo("Illumination Model", &currentModel, illuminationModels, 3)) {
+                        mat.illuminationModel = static_cast<Material::IlluminationModel>(currentModel);
+                        materialChanged = true;
+                    }
+
+                    // Afficher les paramètres appropriés selon le modèle
+                    if (currentModel > 0) { // Phong ou Blinn-Phong
+                        if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
+                        if (ImGui::SliderFloat("Specular Strength", &mat.specularStrength, 0.0f, 1.0f)) materialChanged = true;
+                    }
+                
 
                 if (materialChanged) {
                     obj->setMaterial(mat);
