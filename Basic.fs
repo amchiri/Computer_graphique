@@ -24,6 +24,7 @@ struct EmissiveLight {
 uniform Material u_material;
 uniform sampler2D u_texture;
 uniform vec3 u_viewPos;
+uniform bool u_hasTexture;  // Ajout d'un uniform pour gérer la présence de texture
 
 // Nouveau uniform pour recevoir les lumières émissives
 #define MAX_EMISSIVE_LIGHTS 10
@@ -53,7 +54,8 @@ vec3 CalculateLight(vec3 normal, vec3 fragPos, vec3 lightPos, vec3 lightColor, f
 }
 
 void main() {
-    vec4 texColor = texture(u_texture, v_uv);
+    // Utiliser la couleur de base si pas de texture
+    vec4 texColor = u_hasTexture ? texture(u_texture, v_uv) : vec4(u_material.diffuseColor, 1.0);
     vec3 norm = normalize(v_normal);
     
     if (u_material.isEmissive) {

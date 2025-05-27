@@ -92,12 +92,18 @@ void Mesh::draw(GLShader& shader) {
     glUniform3fv(loc_matSpecular, 1, material.specular);
     glUniform1f(loc_matShininess, material.shininess);
 
-    // Activer la texture de ce mesh spécifique
+    // Indiquer au shader si l'objet a une texture
+    GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+    glUniform1i(loc_hasTexture, material.diffuseMap != 0);
+
+    // Activer la texture seulement si elle existe
     glActiveTexture(GL_TEXTURE0);
     if (material.diffuseMap) {
         glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
         GLint loc_texture = glGetUniformLocation(program, "u_texture");
         glUniform1i(loc_texture, 0);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, 0);  // Unbind toute texture
     }
 
     // Gestion de l'état émissif
@@ -256,15 +262,19 @@ void Mesh::createSphere(float radius, int sectors, int stacks) {
 
 
 bool Mesh::loadFromOBJFile(const char* filename) {
+    std::cout << "\n=== Loading OBJ: " << filename << " ===" << std::endl;
+    
+    // Reset complet du matériau et de la texture
+    material = Material();
+
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
     
-    // Obtenir le répertoire du fichier obj pour charger les textures relatives
     std::string baseDir = std::filesystem::path(filename).parent_path().string();
+    std::cout << "Base directory: " << baseDir << std::endl;
     
-    // Charger le fichier OBJ et MTL associé
     bool ret = tinyobj::LoadObj(
         &attrib, &shapes, &materials, &warn, &err,
         filename, baseDir.c_str(),
@@ -288,67 +298,64 @@ bool Mesh::loadFromOBJFile(const char* filename) {
     std::map<std::tuple<int, int, int>, unsigned int> vertexMap;
     unsigned int currentIndex = 0;
     
-    // Charger le premier matériau disponible (amélioration possible : gérer plusieurs matériaux)
+    // Parcourir tous les matériaux pour trouver celui avec une texture
+    bool textureFound = false;
     if (!materials.empty()) {
-        const auto& mat = materials[0];
-        
-        // Couleurs du matériau
-        material.diffuse[0] = mat.diffuse[0];
-        material.diffuse[1] = mat.diffuse[1];
-        material.diffuse[2] = mat.diffuse[2];
-        
-        material.specular[0] = mat.specular[0];
-        material.specular[1] = mat.specular[1];
-        material.specular[2] = mat.specular[2];
-        
-        material.ambient[0] = mat.ambient[0];
-        material.ambient[1] = mat.ambient[1];
-        material.ambient[2] = mat.ambient[2];
-        
-        // Propriétés du matériau
-        material.shininess = mat.shininess;
-        material.specularStrength = mat.shininess > 0 ? 1.0f : 0.0f;
-        
-        // Charger les textures si elles existent
-        if (!mat.diffuse_texname.empty()) {
-            // Construire le chemin en utilisant std::filesystem
-            std::filesystem::path texPath = std::filesystem::path(baseDir) / mat.diffuse_texname;
-            std::string texPathStr = texPath.string();
-            
-            // Vérifier si le fichier existe avant de tenter de le charger
-            if (std::filesystem::exists(texPath)) {
-                if (!loadTexture(texPathStr.c_str())) {
-                    std::cerr << "Failed to load texture: " << texPathStr << std::endl;
-                }
-            } else {
-                // Essayer aussi le chemin relatif simple et d'autres variations
-                std::vector<std::string> possiblePaths = {
-                    (std::filesystem::path(filename).parent_path() / mat.diffuse_texname).string(),
-                    mat.diffuse_texname,  // Chemin absolu possible
-                    (std::filesystem::path(baseDir) / std::filesystem::path(mat.diffuse_texname).filename()).string()
-                };
+        for (const auto& mat : materials) {
+            if (!mat.diffuse_texname.empty()) {
+                std::cout << "Found material with texture: " << mat.diffuse_texname << std::endl;
                 
-                bool textureLoaded = false;
-                for (const auto& path : possiblePaths) {
-                    if (std::filesystem::exists(path)) {
-                        if (loadTexture(path.c_str())) {
-                            textureLoaded = true;
-                            break;
+                // Construire le chemin en utilisant std::filesystem
+                std::filesystem::path texPath = std::filesystem::path(baseDir) / mat.diffuse_texname;
+                std::string texPathStr = texPath.string();
+                
+                if (std::filesystem::exists(texPath)) {
+                    if (loadTexture(texPathStr.c_str())) {
+                        textureFound = true;
+                        material.diffuse[0] = mat.diffuse[0];
+                        material.diffuse[1] = mat.diffuse[1];
+                        material.diffuse[2] = mat.diffuse[2];
+                        material.specular[0] = mat.specular[0];
+                        material.specular[1] = mat.specular[1];
+                        material.specular[2] = mat.specular[2];
+                        material.shininess = mat.shininess;
+                        break;
+                    }
+                } else {
+                    std::vector<std::string> possiblePaths = {
+                        (std::filesystem::path(filename).parent_path() / mat.diffuse_texname).string(),
+                        mat.diffuse_texname,
+                        (std::filesystem::path(baseDir) / std::filesystem::path(mat.diffuse_texname).filename()).string()
+                    };
+                    
+                    for (const auto& path : possiblePaths) {
+                        std::cout << "Trying path: " << path << std::endl;
+                        if (std::filesystem::exists(path)) {
+                            if (loadTexture(path.c_str())) {
+                                textureFound = true;
+                                break;
+                            }
                         }
                     }
-                }
-                
-                if (!textureLoaded) {
-                    std::cerr << "Texture file not found: " << mat.diffuse_texname << std::endl;
-                    std::cerr << "Searched paths:" << std::endl;
-                    for (const auto& path : possiblePaths) {
-                        std::cerr << "  - " << path << std::endl;
-                    }
+                    
+                    if (textureFound) break;
                 }
             }
         }
+        
+        // Si aucune texture n'a été trouvée, utiliser le premier matériau
+        if (!textureFound && !materials.empty()) {
+            const auto& mat = materials[0];
+            material.diffuse[0] = mat.diffuse[0];
+            material.diffuse[1] = mat.diffuse[1];
+            material.diffuse[2] = mat.diffuse[2];
+            material.specular[0] = mat.specular[0];
+            material.specular[1] = mat.specular[1];
+            material.specular[2] = mat.specular[2];
+            material.shininess = mat.shininess;
+        }
     }
-    
+
     // Pour chaque forme dans le fichier
     for (size_t s = 0; s < shapes.size(); s++) {
         size_t index_offset = 0;
