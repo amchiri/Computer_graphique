@@ -10,24 +10,50 @@
 // ==================== Scene Implementation ====================
 
 bool Scene::InitializeShaders() {
+    std::cout << "Initializing shaders for scene: " << m_name << std::endl;
+    
     // Charger les shaders de base pour la scène
-    if (!m_basicShader.LoadVertexShader("Basic.vs") ||
-        !m_basicShader.LoadFragmentShader("Basic.fs") ||
-        !m_basicShader.Create()) {
+    if (!m_basicShader.LoadVertexShader("src/shaders/Basic.vs")) {
+        std::cerr << "Failed to load Basic vertex shader" << std::endl;
         return false;
     }
+    if (!m_basicShader.LoadFragmentShader("src/shaders/Basic.fs")) {
+        std::cerr << "Failed to load Basic fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_basicShader.Create()) {
+        std::cerr << "Failed to create Basic shader program" << std::endl;
+        return false;
+    }
+    std::cout << "Basic shader loaded successfully" << std::endl;
 
-    if (!m_colorShader.LoadVertexShader("Color.vs") ||
-        !m_colorShader.LoadFragmentShader("Color.fs") ||
-        !m_colorShader.Create()) {
+    if (!m_colorShader.LoadVertexShader("src/shaders/Color.vs")) {
+        std::cerr << "Failed to load Color vertex shader" << std::endl;
         return false;
     }
+    if (!m_colorShader.LoadFragmentShader("src/shaders/Color.fs")) {
+        std::cerr << "Failed to load Color fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_colorShader.Create()) {
+        std::cerr << "Failed to create Color shader program" << std::endl;
+        return false;
+    }
+    std::cout << "Color shader loaded successfully" << std::endl;
 
-    if (!m_envMapShader.LoadVertexShader("EnvMap.vs") ||
-        !m_envMapShader.LoadFragmentShader("EnvMap.fs") ||
-        !m_envMapShader.Create()) {
+    if (!m_envMapShader.LoadVertexShader("src/shaders/EnvMap.vs")) {
+        std::cerr << "Failed to load EnvMap vertex shader" << std::endl;
         return false;
     }
+    if (!m_envMapShader.LoadFragmentShader("src/shaders/EnvMap.fs")) {
+        std::cerr << "Failed to load EnvMap fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_envMapShader.Create()) {
+        std::cerr << "Failed to create EnvMap shader program" << std::endl;
+        return false;
+    }
+    std::cout << "EnvMap shader loaded successfully" << std::endl;
 
     return true;
 }
@@ -256,7 +282,13 @@ void SolarSystemScene::createSun() {
     sunMaterial.emissiveIntensity = 2.0f;
     sunMaterial.lightColor[0] = sunMaterial.lightColor[1] = sunMaterial.lightColor[2] = 1.0f;
     m_sun->setMaterial(sunMaterial);
-    m_sun->loadTexture("models/sun.png");
+
+    // Use correct path to sun texture
+    if (!m_sun->loadTexture("src/resources/textures/sun.png")) {
+        std::cerr << "Failed to load sun texture from: src/resources/textures/sun.png" << std::endl;
+    } else {
+        std::cout << "Successfully loaded sun texture" << std::endl;
+    }
 
     // Le soleil commence avec le shader basique par défaut
     // Il peut être changé via l'interface utilisateur
@@ -295,16 +327,19 @@ void SolarSystemScene::createPlanets() {
 
 void SolarSystemScene::loadPlanetTextures() {
     const char* textures[] = {
-        "models/mercury.png",
-        "models/venus.png",
-        "models/earth.png",
-        "models/mars.png",
-        "models/jupiter.png",
-        "models/saturn.png",
-        "models/uranus.png"
+        "src/resources/textures/mercury.png",
+        "src/resources/textures/venus.png",
+        "src/resources/textures/earth.png",
+        "src/resources/textures/mars.png",
+        "src/resources/textures/jupiter.png",
+        "src/resources/textures/saturn.png",
+        "src/resources/textures/uranus.png"
     };
 
+    std::cout << "Loading planet textures..." << std::endl;
+
     for(size_t i = 0; i < m_planets.size(); i++) {
+        std::cout << "Loading texture for planet " << i << ": " << textures[i] << std::endl;
         Planet& planet = m_planets[i];
         Material planetMaterial;
         planetMaterial.diffuse[0] = planetMaterial.diffuse[1] = planetMaterial.diffuse[2] = 1.0f;
@@ -316,7 +351,9 @@ void SolarSystemScene::loadPlanetTextures() {
         planet.SetMaterial(planetMaterial);
         
         if (!planet.LoadTexture(textures[i])) {
-            std::cerr << "Error: Could not load texture for planet " << i << std::endl;
+            std::cerr << "Error: Could not load texture for planet " << i << ": " << textures[i] << std::endl;
+        } else {
+            std::cout << "Successfully loaded texture for planet " << i << std::endl;
         }
     }
 }
@@ -559,19 +596,31 @@ bool SceneManager::SetActiveScene(const std::string& sceneName) {
 }
 
 bool SceneManager::Initialize() {
+    std::cout << "Initializing SceneManager..." << std::endl;
+    
     // Initialiser toutes les scènes
     for (auto& pair : m_scenes) {
+        std::cout << "Initializing scene: " << pair.first << std::endl;
         if (!pair.second->Initialize()) {
             std::cerr << "Failed to initialize scene: " << pair.first << std::endl;
             return false;
         }
+        std::cout << "Scene initialized successfully: " << pair.first << std::endl;
     }
 
     // Définir la première scène comme active
     if (!m_sceneOrder.empty()) {
-        SetActiveScene(m_sceneOrder[0]);
+        if (!SetActiveScene(m_sceneOrder[0])) {
+            std::cerr << "Failed to set initial active scene" << std::endl;
+            return false;
+        }
+        std::cout << "Initial scene set to: " << m_sceneOrder[0] << std::endl;
+    } else {
+        std::cerr << "No scenes available to set as active" << std::endl;
+        return false;
     }
 
+    std::cout << "SceneManager initialized successfully" << std::endl;
     return true;
 }
 

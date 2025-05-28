@@ -7,18 +7,18 @@
 #include <iostream>
 #include <memory>
 
-#include "GLShader.h"
-#include "Mesh.h"
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "Mat4.h"
-#include "UI.h"
-#include "Skybox.h"
-#include "CameraController.h"
-#include "Planet.h"
-#include "ResourceManager.h"
-#include "SceneManager.h"
+#include "rendering/GLShader.h"
+#include "rendering/Mesh.h"
+#include "ui/imgui/imgui.h"
+#include "ui/imgui/imgui_impl_glfw.h"
+#include "ui/imgui/imgui_impl_opengl3.h"
+#include "core/Mat4.h"
+#include "ui/UI.h"
+#include "rendering/Skybox.h"
+#include "utils/CameraController.h"
+#include "rendering/Planet.h"
+#include "core/ResourceManager.h"
+#include "core/SceneManager.h"
 
 // Variables globales principales
 std::unique_ptr<UI> g_UI;
@@ -129,29 +129,71 @@ void Render() {
     }
 }
 
+void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, 
+                              GLsizei length, const GLchar* message, const void* userParam) {
+    std::string severityStr;
+    switch (severity) {
+        case GL_DEBUG_SEVERITY_HIGH: severityStr = "HIGH"; break;
+        case GL_DEBUG_SEVERITY_MEDIUM: severityStr = "MEDIUM"; break;
+        case GL_DEBUG_SEVERITY_LOW: severityStr = "LOW"; break;
+        case GL_DEBUG_SEVERITY_NOTIFICATION: return; // Skip notifications
+        default: severityStr = "UNKNOWN"; break;
+    }
+    
+    std::string typeStr;
+    switch (type) {
+        case GL_DEBUG_TYPE_ERROR: typeStr = "ERROR"; break;
+        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: typeStr = "DEPRECATED"; break;
+        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: typeStr = "UNDEFINED"; break;
+        case GL_DEBUG_TYPE_PORTABILITY: typeStr = "PORTABILITY"; break;
+        case GL_DEBUG_TYPE_PERFORMANCE: typeStr = "PERFORMANCE"; break;
+        default: typeStr = "OTHER"; break;
+    }
+
+    fprintf(stderr, "GL %s [%s] (ID: %u): %s\n", 
+            severityStr.c_str(), typeStr.c_str(), id, message);
+}
+
 bool initializeOpenGL() {
     // Configuration de la fenêtre GLFW
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE); // Enable debug context
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     
     g_Window = glfwCreateWindow(width, height, "OpenGL Scene Manager", nullptr, nullptr);
     if (!g_Window) {
-        std::cerr << "Erreur : Impossible de créer la fenêtre GLFW" << std::endl;
+        const char* error_description;
+        glfwGetError(&error_description);
+        std::cerr << "Erreur : Impossible de créer la fenêtre GLFW: " << error_description << std::endl;
         return false;
     }
+    
     glfwMakeContextCurrent(g_Window);
 
-    // Callback de redimensionnement
-    glfwSetFramebufferSizeCallback(g_Window, [](GLFWwindow*, int w, int h) {
-        width = w;
-        height = h;
-        glViewport(0, 0, width, height);
-    });
-
-    // Initialisation de GLEW
-    if (glewInit() != GLEW_OK) {
-        std::cerr << "Erreur : Impossible d'initialiser GLEW" << std::endl;
+    // Initialize GLEW
+    glewExperimental = GL_TRUE; // Enable experimental features
+    GLenum err = glewInit();
+    if (err != GLEW_OK) {
+        std::cerr << "Erreur GLEW: " << glewGetErrorString(err) << std::endl;
         return false;
     }
+
+    // Setup debug callback
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(MessageCallback, 0);
+
+    // Print OpenGL version info
+    std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "GLEW Version: " << glewGetString(GLEW_VERSION) << std::endl;
+    std::cout << "GLFW Version: " << glfwGetVersionString() << std::endl;
+    std::cout << "GPU Vendor: " << glGetString(GL_VENDOR) << std::endl;
+    std::cout << "GPU Renderer: " << glGetString(GL_RENDERER) << std::endl;
+
+    // Clear any existing errors
+    while (glGetError() != GL_NO_ERROR);
 
     return true;
 }
@@ -192,11 +234,13 @@ bool initializeShaders() {
 }
 
 bool initializeSkybox() {
+    std::cout << "Initializing skybox..." << std::endl;
     g_Skybox = std::make_unique<Skybox>();
-    if (!g_Skybox->Initialize("space.png")) {
-        std::cerr << "Failed to initialize skybox" << std::endl;
+    if (!g_Skybox->Initialize("src/resources/textures/space.png")) {
+        std::cerr << "Failed to initialize skybox with texture: src/resources/textures/space.png" << std::endl;
         return false;
     }
+    std::cout << "Skybox initialized successfully" << std::endl;
     return true;
 }
 
@@ -269,25 +313,39 @@ void Cleanup() {
 }
 
 int main() {
+    // Set error callback before init
+    glfwSetErrorCallback([](int error, const char* description) {
+        std::cerr << "GLFW Error " << error << ": " << description << std::endl;
+    });
+
     if (!glfwInit()) {
         std::cerr << "Erreur : Impossible d'initialiser GLFW" << std::endl;
         return -1;
     }
 
-    if (!Initialize()) {
-        std::cerr << "Erreur : Impossible d'initialiser l'application" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
+    try {
+        if (!Initialize()) {
+            std::cerr << "Erreur : Impossible d'initialiser l'application" << std::endl;
+            glfwTerminate();
+            return -1;
+        }
 
-    last_frame_time = glfwGetTime();
+        last_frame_time = glfwGetTime();
 
-    // Boucle principale
-    while (!glfwWindowShouldClose(g_Window)) {
-        processInput(g_Window);
-        Render();
-        glfwSwapBuffers(g_Window);
-        glfwPollEvents();
+        // Boucle principale
+        while (!glfwWindowShouldClose(g_Window)) {
+            try {
+                processInput(g_Window);
+                Render();
+                glfwSwapBuffers(g_Window);
+                glfwPollEvents();
+            } catch (const std::exception& e) {
+                std::cerr << "Error in main loop: " << e.what() << std::endl;
+                break;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
     }
 
     // Nettoyage

@@ -24,17 +24,14 @@ pacman -S mingw-w64-x86_64-stb
 
 ## Compilation
 
-Naviguez vers le dossier du projet et compilez :
+Le projet utilise un Makefile pour la compilation. Dans le dossier du projet, exécutez simplement :
 ```bash
-cd /c/msys64/home/polom/Basic
-g++ BasicShader.cpp GLShader.cpp MatrixUtils.cpp Mesh.cpp Mat4.cpp tiny_obj_loader.cpp \
-    imgui/imgui.cpp \
-    imgui/imgui_draw.cpp \
-    imgui/imgui_widgets.cpp \
-    imgui/imgui_tables.cpp \
-    imgui/imgui_impl_glfw.cpp \
-    imgui/imgui_impl_opengl3.cpp \
-    -I. -Iimgui -lglew32 -lglfw3 -lopengl32 -lglu32 -lcomdlg32 -o BasicShader.exe
+make
+```
+
+Pour nettoyer les fichiers compilés :
+```bash
+make clean
 ```
 
 ## Exécution
@@ -55,26 +52,39 @@ g++ BasicShader.cpp GLShader.cpp MatrixUtils.cpp Mesh.cpp Mat4.cpp tiny_obj_load
 - Chargement de modèles 3D
 - Skybox
 
-## Structure des fichiers
-- `BasicShader.cpp` : Point d'entrée et logique principale
-- `Mesh.cpp/.h` : Gestion des objets 3D
-- `Mat4.cpp/.h` : Opérations matricielles
-- `GLShader.cpp/.h` : Gestion des shaders
-- `*.vs/*.fs` : Shaders GLSL
+## Structure du projet
+- `src/core/` : Composants principaux
+  - `BasicShader.cpp` : Point d'entrée et logique principale
+  - `Mat4.cpp/.h` : Opérations matricielles
+  - `ResourceManager.cpp/.h` : Gestion des ressources
+  - `SceneManager.cpp/.h` : Gestion de la scène
+
+- `src/rendering/` : Composants de rendu
+  - `GLShader.cpp/.h` : Gestion des shaders
+  - `Mesh.cpp/.h` : Gestion des objets 3D
+  - `Planet.cpp/.h` : Logique des planètes
+  - `Skybox.cpp/.h` : Gestion de la skybox
+
+- `src/ui/` : Interface utilisateur
+  - `UI.cpp/.h` : Interface ImGui
+  - `imgui/` : Bibliothèque ImGui
+
+- `src/utils/` : Utilitaires
+  - `CameraController.cpp/.h` : Contrôle de la caméra
+  - `tiny_obj_loader.cpp/.h` : Chargement de modèles 3D
+
+- `resources/` : Ressources du projet
+  - `models/` : Modèles 3D
+  - `textures/` : Textures des planètes et skybox
+  - `shaders/` : Shaders GLSL
 
 ## Dépannage
 Si vous rencontrez des erreurs :
 1. Vérifiez que tous les paquets sont installés
-2. Assurez-vous que les fichiers de texture sont présents
-3. Vérifiez les chemins d'accès dans le code
+2. Assurez-vous que les fichiers de texture sont présents dans le dossier resources/textures
+3. Vérifiez que tous les shaders sont présents dans le dossier resources/shaders
 
 ## Remarques
-- Les textures des planètes doivent être dans le dossier du projet
-- Le fichier `space.png` est nécessaire pour la skybox
-
-
-g++ BasicShader.cpp GLShader.cpp Mesh.cpp Mat4.cpp tiny_obj_loader.cpp imgui/imgui.cpp imgui/imgui_draw.cpp imgui/imgui_widgets.cpp imgui/imgui_tables.cpp imgui/imgui_impl_glfw.cpp imgui/imgui_impl_opengl3.cpp -I. -Iimgui -lglew32 -lglfw3 -lopengl32 -lglu32 -lcomdlg32 -o BasicShader.exe
-
-
-
-$ g++ BasicShader.cpp GLShader.cpp Mesh.cpp Mat4.cpp tiny_obj_loader.cpp UI.cpp Skybox.cpp CameraController.cpp Planet.cpp imgui/*.cpp -I. -Iimgui -lglew32 -lglfw3 -lopengl32 -lglu32 -lcomdlg32 -o BasicShader.exe
+- Les textures des planètes doivent être dans le dossier resources/textures
+- Les modèles 3D doivent être dans le dossier resources/models
+- Les shaders doivent être dans le dossier resources/shaders

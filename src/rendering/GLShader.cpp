@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 bool ValidateShader(GLuint shader)
 {
@@ -133,12 +134,9 @@ bool GLShader::Create()
 
 		if (infoLen > 1)
 		{
-			char* infoLog = new char[infoLen + 1];
-
-			glGetProgramInfoLog(m_Program, infoLen, NULL, infoLog);
-			std::cout << "Erreur de lien du programme: " << infoLog << std::endl;
-
-			delete(infoLog);
+			std::vector<char> infoLog(infoLen + 1);
+			glGetProgramInfoLog(m_Program, infoLen, nullptr, infoLog.data());
+			std::cerr << "Program linking failed:\n" << infoLog.data() << std::endl;
 		}
 
 		glDeleteProgram(m_Program);

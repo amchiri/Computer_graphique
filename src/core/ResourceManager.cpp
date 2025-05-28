@@ -9,13 +9,22 @@ ResourceManager& ResourceManager::Get() {
 bool ResourceManager::LoadShader(const std::string& name, const char* vertexPath, const char* fragmentPath) {
     auto shader = std::make_unique<GLShader>();
     
-    if (!shader->LoadVertexShader(vertexPath)) {
-        std::cerr << "Failed to load vertex shader: " << vertexPath << std::endl;
+    std::string shaderDir = "src/shaders/";
+    std::string fullVertexPath = shaderDir + vertexPath;
+    std::string fullFragmentPath = shaderDir + fragmentPath;
+    
+    // Print debug info
+    std::cout << "Loading shader '" << name << "'" << std::endl;
+    std::cout << "  Vertex shader: " << fullVertexPath << std::endl;
+    std::cout << "  Fragment shader: " << fullFragmentPath << std::endl;
+
+    if (!shader->LoadVertexShader(fullVertexPath.c_str())) {
+        std::cerr << "Failed to load vertex shader: " << fullVertexPath << std::endl;
         return false;
     }
 
-    if (!shader->LoadFragmentShader(fragmentPath)) {
-        std::cerr << "Failed to load fragment shader: " << fragmentPath << std::endl;
+    if (!shader->LoadFragmentShader(fullFragmentPath.c_str())) {
+        std::cerr << "Failed to load fragment shader: " << fullFragmentPath << std::endl;
         return false;
     }
 
@@ -24,6 +33,7 @@ bool ResourceManager::LoadShader(const std::string& name, const char* vertexPath
         return false;
     }
 
+    std::cout << "Successfully loaded shader '" << name << "'" << std::endl;
     m_Shaders[name] = std::move(shader);
     return true;
 }

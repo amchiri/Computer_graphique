@@ -10,23 +10,37 @@ Skybox::~Skybox() {
 }
 
 bool Skybox::Initialize(const char* texturePath) {
+    std::cout << "Initializing Skybox..." << std::endl;
+    
     // Charger les shaders
-    if (!m_Shader.LoadVertexShader("Skybox.vs") ||
-        !m_Shader.LoadFragmentShader("Skybox.fs") ||
-        !m_Shader.Create()) {
-        std::cerr << "Failed to load skybox shaders" << std::endl;
+    std::cout << "Loading skybox shaders..." << std::endl;
+    if (!m_Shader.LoadVertexShader("src/shaders/Skybox.vs")) {
+        std::cerr << "Failed to load skybox vertex shader" << std::endl;
         return false;
     }
+    if (!m_Shader.LoadFragmentShader("src/shaders/Skybox.fs")) {
+        std::cerr << "Failed to load skybox fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_Shader.Create()) {
+        std::cerr << "Failed to create skybox shader program" << std::endl;
+        return false;
+    }
+    std::cout << "Skybox shaders loaded successfully" << std::endl;
 
+    std::cout << "Creating skybox buffers..." << std::endl;
     if (!CreateBuffers()) {
         std::cerr << "Failed to create skybox buffers" << std::endl;
         return false;
     }
+    std::cout << "Skybox buffers created successfully" << std::endl;
 
+    std::cout << "Loading skybox texture: " << texturePath << std::endl;
     if (!LoadTexture(texturePath)) {
-        std::cerr << "Failed to load skybox texture" << std::endl;
+        std::cerr << "Failed to load skybox texture: " << texturePath << std::endl;
         return false;
     }
+    std::cout << "Skybox texture loaded successfully" << std::endl;
 
     return true;
 }
@@ -90,26 +104,48 @@ bool Skybox::CreateBuffers() {
 }
 
 bool Skybox::LoadTexture(const char* texturePath) {
+    // Clear any previous texture
+    if (m_TextureID != 0) {
+        glDeleteTextures(1, &m_TextureID);
+        m_TextureID = 0;
+    }
+
+    // Load texture data using stb_image
     int width, height, channels;
-    unsigned char* data = stbi_load(texturePath, &width, &height, &channels, STBI_rgb_alpha);
-    
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* data = stbi_load(texturePath, &width, &height, &channels, 0);
     if (!data) {
-        std::cerr << "Failed to load skybox texture: " << texturePath << std::endl;
-        std::cerr << "Reason: " << stbi_failure_reason() << std::endl;
+        std::cerr << "Failed to load skybox texture data: " << stbi_failure_reason() << std::endl;
         return false;
     }
 
+    // Create and configure the texture
     glGenTextures(1, &m_TextureID);
     glBindTexture(GL_TEXTURE_2D, m_TextureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    // Upload texture data
+    GLenum format = channels == 4 ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    
+    // Free the loaded data
     stbi_image_free(data);
+
+    // Check for OpenGL errors
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        std::cerr << "OpenGL error while loading skybox texture: " << error << std::endl;
+        glDeleteTextures(1, &m_TextureID);
+        m_TextureID = 0;
+        return false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 }
 
