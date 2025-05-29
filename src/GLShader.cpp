@@ -1,8 +1,7 @@
-
-//#include "stdafx.h"
-#include "GLShader.h"
+//#include "../include/stdafx.h"
+#include "../include/GLShader.h"
 //#define GLEW_STATIC
-#include "GL/glew.h"
+#include "../include/GL/glew.h"
 
 #include <fstream>
 #include <iostream>
@@ -159,5 +158,51 @@ void GLShader::Destroy()
 	glDeleteShader(m_VertexShader);
 	glDeleteShader(m_FragmentShader);
 	glDeleteProgram(m_Program);
+}
+
+void GLShader::SetBool(const char* name, bool value) {
+    GLint location = GetUniformLocation(name);
+    if (location >= 0) {
+        glUniform1i(location, (int)value);
+    }
+}
+
+void GLShader::SetInt(const char* name, int value) {
+    GLint location = GetUniformLocation(name);
+    if (location >= 0) {
+        glUniform1i(location, value);
+    }
+}
+
+void GLShader::SetFloat(const char* name, float value) {
+    GLint location = GetUniformLocation(name);
+    if (location >= 0) {
+        glUniform1f(location, value);
+    }
+}
+
+void GLShader::SetVec3(const char* name, const float* value) {
+    GLint location = GetUniformLocation(name);
+    if (location >= 0) {
+        glUniform3fv(location, 1, value);
+    }
+}
+
+void GLShader::SetVec4(const char* name, const float* value) {
+    GLint location = GetUniformLocation(name);
+    if (location >= 0) {
+        glUniform4fv(location, 1, value);
+    }
+}
+
+void GLShader::SetMat4(const char* name, const float* value) {
+    GLint location = GetUniformLocation(name);
+    if (location >= 0) {
+        glUniformMatrix4fv(location, 1, GL_FALSE, value);
+    }
+}
+
+GLint GLShader::GetUniformLocation(const char* name) const {
+    return glGetUniformLocation(m_Program, name);
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GL/glew.h>
 #include <cstdint>
 
 class GLShader
@@ -30,4 +31,17 @@ public:
 	bool LoadFragmentShader(const char* filename);
 	bool Create();
 	void Destroy();
+
+	void Use() const { glUseProgram(m_Program); }
+
+	// Ajout des méthodes pour gérer les uniformes
+	void SetBool(const char* name, bool value);
+	void SetInt(const char* name, int value);
+	void SetFloat(const char* name, float value);
+	void SetVec3(const char* name, const float* value);
+	void SetVec4(const char* name, const float* value);
+	void SetMat4(const char* name, const float* value);
+
+	// Méthode pour récupérer la location d'un uniform
+	GLint GetUniformLocation(const char* name) const;
 };

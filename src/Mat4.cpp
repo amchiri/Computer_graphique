@@ -1,4 +1,4 @@
-#include "Mat4.h"
+#include "../include/Mat4.h"
 
 Mat4::Mat4() {
     std::fill(m_data.begin(), m_data.end(), 0.0f);
