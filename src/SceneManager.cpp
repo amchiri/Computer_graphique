@@ -11,20 +11,20 @@
 
 bool Scene::InitializeShaders() {
     // Charger les shaders de base pour la scène
-    if (!m_basicShader.LoadVertexShader("Basic.vs") ||
-        !m_basicShader.LoadFragmentShader("Basic.fs") ||
+    if (!m_basicShader.LoadVertexShader("assets/shaders/Basic.vs") ||
+        !m_basicShader.LoadFragmentShader("assets/shaders/Basic.fs") ||
         !m_basicShader.Create()) {
         return false;
     }
 
-    if (!m_colorShader.LoadVertexShader("Color.vs") ||
-        !m_colorShader.LoadFragmentShader("Color.fs") ||
+    if (!m_colorShader.LoadVertexShader("assets/shaders/Color.vs") ||
+        !m_colorShader.LoadFragmentShader("assets/shaders/Color.fs") ||
         !m_colorShader.Create()) {
         return false;
     }
 
-    if (!m_envMapShader.LoadVertexShader("EnvMap.vs") ||
-        !m_envMapShader.LoadFragmentShader("EnvMap.fs") ||
+    if (!m_envMapShader.LoadVertexShader("assets/shaders/EnvMap.vs") ||
+        !m_envMapShader.LoadFragmentShader("assets/shaders/EnvMap.fs") ||
         !m_envMapShader.Create()) {
         return false;
     }
@@ -256,7 +256,7 @@ void SolarSystemScene::createSun() {
     sunMaterial.emissiveIntensity = 2.0f;
     sunMaterial.lightColor[0] = sunMaterial.lightColor[1] = sunMaterial.lightColor[2] = 1.0f;
     m_sun->setMaterial(sunMaterial);
-    m_sun->loadTexture("models/sun.png");
+    m_sun->loadTexture("assets/textures/sun.png");
 
     // Le soleil commence avec le shader basique par défaut
     // Il peut être changé via l'interface utilisateur
@@ -295,13 +295,13 @@ void SolarSystemScene::createPlanets() {
 
 void SolarSystemScene::loadPlanetTextures() {
     const char* textures[] = {
-        "models/mercury.png",
-        "models/venus.png",
-        "models/earth.png",
-        "models/mars.png",
-        "models/jupiter.png",
-        "models/saturn.png",
-        "models/uranus.png"
+        "assets/textures/mercury.png",
+        "assets/textures/venus.png",
+        "assets/textures/earth.png",
+        "assets/textures/mars.png",
+        "assets/textures/jupiter.png",
+        "assets/textures/saturn.png",
+        "assets/textures/uranus.png"
     };
 
     for(size_t i = 0; i < m_planets.size(); i++) {
@@ -498,7 +498,7 @@ void DemoScene::createDemoObjects() {
     // Cube texturé - utilisera le shader basique
     Mesh* texCube = new Mesh();
     texCube->createSphere(1.0f, 32, 32);
-    texCube->loadTexture("models/earth.png");
+    texCube->loadTexture("assets/textures/earth.png");
     Material matTex;
     matTex.diffuse[0] = matTex.diffuse[1] = matTex.diffuse[2] = 1.0f;
     matTex.specular[0] = matTex.specular[1] = matTex.specular[2] = 0.5f;

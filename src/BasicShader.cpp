@@ -173,9 +173,9 @@ bool initializeShaders() {
     auto& rm = ResourceManager::Get();
     
     const char* shaders[][3] = {
-        {"basic", "Basic.vs", "Basic.fs"},
-        {"color", "Color.vs", "Color.fs"},
-        {"envmap", "EnvMap.vs", "EnvMap.fs"}
+        {"basic", "assets/shaders/Basic.vs", "assets/shaders/Basic.fs"},
+        {"color", "assets/shaders/Color.vs", "assets/shaders/Color.fs"},
+        {"envmap", "assets/shaders/EnvMap.vs", "assets/shaders/EnvMap.fs"}
     };
     
     for (auto& shader : shaders) {
@@ -190,7 +190,7 @@ bool initializeShaders() {
 
 bool initializeSkybox() {
     g_Skybox = std::make_unique<Skybox>();
-    if (!g_Skybox->Initialize("space.png")) {
+    if (!g_Skybox->Initialize("assets/textures/space.png")) {
         std::cerr << "Failed to initialize skybox" << std::endl;
         return false;
     }

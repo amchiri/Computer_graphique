@@ -4,6 +4,7 @@
         "*.css": "tailwindcss",
         "iostream": "cpp",
         "filesystem": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "new": "cpp"
     }
 }

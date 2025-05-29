@@ -11,8 +11,8 @@ Skybox::~Skybox() {
 
 bool Skybox::Initialize(const char* texturePath) {
     // Charger les shaders
-    if (!m_Shader.LoadVertexShader("Skybox.vs") ||
-        !m_Shader.LoadFragmentShader("Skybox.fs") ||
+    if (!m_Shader.LoadVertexShader("assets/shaders/Skybox.vs") ||
+        !m_Shader.LoadFragmentShader("assets/shaders/Skybox.fs") ||
         !m_Shader.Create()) {
         std::cerr << "Failed to load skybox shaders" << std::endl;
         return false;
