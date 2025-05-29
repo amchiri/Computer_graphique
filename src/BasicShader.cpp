@@ -7,18 +7,15 @@
 #include <iostream>
 #include <memory>
 
-#include "GLShader.h"
-#include "Mesh.h"
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "Mat4.h"
-#include "UI.h"
-#include "Skybox.h"
-#include "CameraController.h"
-#include "Planet.h"
-#include "ResourceManager.h"
-#include "SceneManager.h"
+#include "../include/GLShader.h"
+#include "../include/Mesh.h"
+#include "../include/Mat4.h"
+#include "../include/UI.h"
+#include "../include/Skybox.h"
+#include "../include/CameraController.h"
+#include "../include/Planet.h"
+#include "../include/ResourceManager.h"
+#include "../include/SceneManager.h"
 
 // Variables globales principales
 std::unique_ptr<UI> g_UI;

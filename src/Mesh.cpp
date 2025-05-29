@@ -1,7 +1,7 @@
-#include "Mesh.h"
-#include "Mat4.h"
+#include "../include/Mesh.h"
+#include "../include/Mat4.h"
 #include <stb/stb_image.h>
-#include "tiny_obj_loader.h"
+#include "../include/tiny_obj_loader.h"
 #include <iostream>
 #include <cmath>
 #include <filesystem>

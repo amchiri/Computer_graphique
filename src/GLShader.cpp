@@ -1,7 +1,7 @@
-//#include "stdafx.h"
-#include "GLShader.h"
+//#include "../include/stdafx.h"
+#include "../include/GLShader.h"
 //#define GLEW_STATIC
-#include "GL/glew.h"
+#include "../include/GL/glew.h"
 
 #include <fstream>
 #include <iostream>

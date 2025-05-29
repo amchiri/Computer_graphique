@@ -1,8 +1,8 @@
-#include "SceneManager.h"
+#include "../include/SceneManager.h"
 #include <iostream>
 #include <algorithm>
 #include <cstdio>  // Pour sprintf
-#include "CameraController.h" // Ajouté pour CameraController
+#include "../include/CameraController.h" // Ajouté pour CameraController
 
 // Définir MAX_LIGHTS en haut du fichier
 #define MAX_LIGHTS 10

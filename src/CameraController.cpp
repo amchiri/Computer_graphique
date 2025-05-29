@@ -1,5 +1,5 @@
-#include "CameraController.h"
-#include "imgui.h"
+#include "../include/CameraController.h"
+#include "../imgui/imgui.h"
 #include <cmath>
 
 CameraController* CameraController::s_Instance = nullptr;
