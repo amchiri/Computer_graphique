@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <UBOManager.h>
 
 bool ValidateShader(GLuint shader)
 {
@@ -113,40 +114,50 @@ bool GLShader::LoadFragmentShader(const char* filename)
 	return ValidateShader(m_FragmentShader);
 }
 
-bool GLShader::Create()
-{
-	m_Program = glCreateProgram();
-	glAttachShader(m_Program, m_VertexShader);
-	if (m_GeometryShader)
-		glAttachShader(m_Program, m_GeometryShader);
-	glAttachShader(m_Program, m_FragmentShader);
-	glLinkProgram(m_Program);
+bool GLShader::Create() {
+    m_Program = glCreateProgram();
+    glAttachShader(m_Program, m_VertexShader);
+    if (m_GeometryShader)
+        glAttachShader(m_Program, m_GeometryShader);
+    glAttachShader(m_Program, m_FragmentShader);
+    glLinkProgram(m_Program);
 
-	int32_t linked = 0;
-	int32_t infoLen = 0;
-	// verification du statut du linkage
-	glGetProgramiv(m_Program, GL_LINK_STATUS, &linked);
+    int32_t linked = 0;
+    int32_t infoLen = 0;
+    // verification du statut du linkage
+    glGetProgramiv(m_Program, GL_LINK_STATUS, &linked);
 
-	if (!linked)
-	{
-		glGetProgramiv(m_Program, GL_INFO_LOG_LENGTH, &infoLen);
+    if (!linked)
+    {
+        glGetProgramiv(m_Program, GL_INFO_LOG_LENGTH, &infoLen);
 
-		if (infoLen > 1)
-		{
-			char* infoLog = new char[infoLen + 1];
+        if (infoLen > 1)
+        {
+            char* infoLog = new char[infoLen + 1];
 
-			glGetProgramInfoLog(m_Program, infoLen, NULL, infoLog);
-			std::cout << "Erreur de lien du programme: " << infoLog << std::endl;
+            glGetProgramInfoLog(m_Program, infoLen, NULL, infoLog);
+            std::cout << "Erreur de lien du programme: " << infoLog << std::endl;
 
-			delete(infoLog);
-		}
+            delete(infoLog);
+        }
 
-		glDeleteProgram(m_Program);
+        glDeleteProgram(m_Program);
 
-		return false;
-	}
+        return false;
+    }
 
-	return true;
+    // Lier les UBOs aux points de binding appropriés
+    GLuint blockIndex = glGetUniformBlockIndex(m_Program, "ProjectionView");
+    if (blockIndex != GL_INVALID_INDEX) {
+        glUniformBlockBinding(m_Program, blockIndex, UBOManager::PROJECTION_VIEW_BINDING);
+    }
+
+    blockIndex = glGetUniformBlockIndex(m_Program, "Transform");
+    if (blockIndex != GL_INVALID_INDEX) {
+        glUniformBlockBinding(m_Program, blockIndex, UBOManager::TRANSFORM_BINDING);
+    }
+
+    return true;
 }
 
 void GLShader::Destroy()

@@ -16,6 +16,7 @@
 #include "../include/Planet.h"
 #include "../include/ResourceManager.h"
 #include "../include/SceneManager.h"
+#include "../include/UBOManager.h"
 
 // Variables globales principales
 std::unique_ptr<UI> g_UI;
@@ -102,16 +103,20 @@ void Render() {
         };
         viewMatrix = Mat4::lookAt(camPos, camTarget, camUp);
     }
+    
+    // Mettre à jour les UBOs avec les nouvelles matrices
+    UBOManager::Get().UpdateProjectionView(projectionMatrix.data(), viewMatrix.data());
 
-    // Rendu de la scène active
+    // Rendu de la skybox en premier
+    if (g_Skybox) {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        g_Skybox->Draw(viewMatrix, projectionMatrix);
+    }
+
+    // Rendu du reste de la scène
     if (g_SceneManager) {
         g_SceneManager->Update(elapsed_time);
         g_SceneManager->Render(projectionMatrix, viewMatrix);
-    }
-
-    // Rendu de la skybox
-    if (g_Skybox) {
-        g_Skybox->Draw(viewMatrix, projectionMatrix);
     }
 
     // Interface utilisateur
@@ -233,8 +238,19 @@ bool initializeUI() {
 }
 
 bool Initialize() {
-    if (!initializeOpenGL() || 
-        !initializeCamera() || 
+    if (!initializeOpenGL()) {
+        return false;
+    }
+
+    // Configuration OpenGL globale
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Initialiser l'UBO Manager immédiatement après OpenGL
+    UBOManager::Get().Initialize();
+
+    if (!initializeCamera() || 
         !initializeShaders() || 
         !initializeSkybox() || 
         !initializeScenes() || 
@@ -263,6 +279,7 @@ void Cleanup() {
     g_UI.reset();
     g_Skybox.reset();
     g_Camera.reset();
+    UBOManager::Get().Cleanup();
 }
 
 int main() {

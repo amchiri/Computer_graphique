@@ -1,4 +1,5 @@
 #include "../include/Skybox.h"
+#include "../include/UBOManager.h"
 #include <stb/stb_image.h>
 #include <iostream>
 
@@ -89,54 +90,56 @@ bool Skybox::CreateBuffers() {
     return true;
 }
 
+void Skybox::Draw(const Mat4& viewMatrix, const Mat4& projectionMatrix) {
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    
+    GLuint program = m_Shader.GetProgram();
+    glUseProgram(program);
+
+    // Textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_TextureID);
+    GLint loc_texture = glGetUniformLocation(program, "u_texture");
+    if (loc_texture >= 0) {
+        glUniform1i(loc_texture, 0);
+    }
+
+    // Rendu
+    glBindVertexArray(m_VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // Restaurer les états
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+}
+
 bool Skybox::LoadTexture(const char* texturePath) {
     int width, height, channels;
-    unsigned char* data = stbi_load(texturePath, &width, &height, &channels, STBI_rgb_alpha);
+    unsigned char* data = stbi_load(texturePath, &width, &height, &channels, 0);
     
     if (!data) {
         std::cerr << "Failed to load skybox texture: " << texturePath << std::endl;
-        std::cerr << "Reason: " << stbi_failure_reason() << std::endl;
         return false;
     }
 
     glGenTextures(1, &m_TextureID);
     glBindTexture(GL_TEXTURE_2D, m_TextureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    
+    GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+    GLenum internalFormat = (channels == 4) ? GL_RGBA8 : GL_RGB8;
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     stbi_image_free(data);
     return true;
-}
-
-void Skybox::Draw(const Mat4& viewMatrix, const Mat4& projectionMatrix) {
-    glDepthFunc(GL_LEQUAL);
-    
-    GLuint program = m_Shader.GetProgram();
-    glUseProgram(program);
-
-    // Supprimer la translation de la matrice de vue
-    Mat4 skyboxView = viewMatrix;
-    float* skyboxData = skyboxView.data();
-    skyboxData[12] = skyboxData[13] = skyboxData[14] = 0.0f;
-
-    GLint viewLoc = glGetUniformLocation(program, "u_view");
-    GLint projLoc = glGetUniformLocation(program, "u_projection");
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, skyboxView.data());
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix.data());
-
-    glBindVertexArray(m_VAO);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_TextureID);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDepthFunc(GL_LESS);
 }
 
 void Skybox::Cleanup() {

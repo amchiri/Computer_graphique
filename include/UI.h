@@ -25,6 +25,7 @@ public:
     void SetSceneObjects(const std::vector<Mesh*>& objects, Mesh* sun, const std::vector<Planet>& planets);
     void SetShaders(GLShader* basic, GLShader* color, GLShader* envmap); // Changed from references to pointers
     void SetLightParameters(float* lightColor, float* lightIntensity);
+    bool IsWireframeMode() const { return m_WireframeMode; }
 
 private:
     void ShowMainWindow(float fps, const float* cameraPos, const float* cameraFront);
@@ -40,7 +41,7 @@ private:
     int m_Height;
     bool m_ShowDebugWindow;
     bool m_ShowSettings;
-    bool m_WireframeMode;
+    bool m_WireframeMode = false;
     int m_SelectedObject;
     bool m_ShowNewSceneDialog;
     char m_NewSceneName[256];

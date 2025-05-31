@@ -92,6 +92,10 @@ void UI::ShowMainWindow(float fps, const float* cameraPos, const float* cameraDi
         if (ImGui::CollapsingHeader("Camera")) {
             ImGui::Text("Position: (%.2f, %.2f, %.2f)", cameraPos[0], cameraPos[1], cameraPos[2]);
             ImGui::Text("Direction: (%.2f, %.2f, %.2f)", cameraDir[0], cameraDir[1], cameraDir[2]);
+            // Ajouter l'option wireframe
+            if (ImGui::Checkbox("Wireframe", &m_WireframeMode)) {
+                glPolygonMode(GL_FRONT_AND_BACK, m_WireframeMode ? GL_LINE : GL_FILL);
+            }
         }
         ImGui::Text("FPS: %.1f", fps);
         ShowObjectControls();
@@ -546,6 +550,7 @@ void UI::ShowLoadModelDialog() {
                 if (newMesh->loadFromOBJFile(filepath)) {
                     newMesh->setPosition(0.0f, 0.0f, -5.0f);
                     newMesh->setScale(1.0f, 1.0f, 1.0f);
+                    newMesh->setCurrentShader(&(currentScene->GetBasicShader()));
                     currentScene->AddObject(newMesh);
                     m_ShowLoadModelDialog = false;
                     memset(filepath, 0, sizeof(filepath));

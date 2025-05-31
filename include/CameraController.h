@@ -38,7 +38,7 @@ private:
     float m_Up[3] = {0.0f, 1.0f, 0.0f};
     float m_Yaw = -90.0f;
     float m_Pitch = 0.0f;
-    float m_Speed = 0.05f;
+    float m_Speed = 1.0f;
     float m_Sensitivity = 0.1f;
     bool m_Enabled = true;
     bool m_CursorLocked = true;

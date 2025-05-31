@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>  // Pour sprintf
 #include "../include/CameraController.h" // Ajouté pour CameraController
+#include <UBOManager.h>
 
 // Définir MAX_LIGHTS en haut du fichier
 #define MAX_LIGHTS 10
@@ -521,6 +522,49 @@ void DemoScene::createDemoObjects() {
     envCube->setPosition(8, 0, -10);  // Ajout d'un Z négatif pour être devant la caméra
     envCube->setCurrentShader(nullptr);
     m_objects.push_back(envCube);
+}
+
+// ==================== EmptyScene Implementation ====================
+
+EmptyScene::EmptyScene(const std::string& name) : Scene(name) {
+}
+
+bool EmptyScene::Initialize() {
+    if (!InitializeShaders()) {
+        std::cerr << "Failed to initialize shaders for EmptyScene" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+void EmptyScene::Update(float deltaTime) {
+    for (Mesh* obj : m_objects) {
+        if (obj) {
+            // Ajouter ici la logique de mise à jour si nécessaire
+        }
+    }
+}
+
+void EmptyScene::Render(const Mat4& projection, const Mat4& view) {
+    for (Mesh* obj : m_objects) {
+        if (obj) {
+            if (!obj->getCurrentShader()) {
+                obj->setCurrentShader(&m_basicShader);
+            }
+            GLShader* shader = obj->getCurrentShader();
+            if (shader) {
+                obj->draw(*shader);
+            }
+        }
+    }
+}
+
+void EmptyScene::Cleanup() {
+    for (Mesh* obj : m_objects) {
+        delete obj;
+    }
+    m_objects.clear();
+    CleanupShaders();
 }
 
 // ==================== SceneManager Implementation ====================

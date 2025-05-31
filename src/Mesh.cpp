@@ -6,6 +6,7 @@
 #include <cmath>
 #include <filesystem>
 #include <unordered_map>
+#include "../include/UBOManager.h"
 
 Mesh::Mesh() : VAO(0), VBO(0), EBO(0) {
     position[0] = position[1] = position[2] = 0.0f;
@@ -37,7 +38,6 @@ bool Mesh::loadTexture(const char* filename) {
     glGenTextures(1, &material.diffuseMap);
     glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
 
-    // Utilise GL_SRGB8_ALPHA8 pour les textures couleur (sRGB aware)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -77,11 +77,10 @@ void Mesh::draw(GLShader& shader) {
     auto program = shader.GetProgram();
     glUseProgram(program);
 
-    // Calculer et appliquer la matrice de modèle
+    // Calculer et mettre à jour la matrice de modèle via l'UBO
     float modelMatrix[16];
     calculateModelMatrix(modelMatrix);
-    GLint loc_transform = glGetUniformLocation(program, "u_transform");
-    glUniformMatrix4fv(loc_transform, 1, GL_FALSE, modelMatrix);
+    UBOManager::Get().UpdateTransform(modelMatrix);
 
     // Appliquer le matériau
     GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");

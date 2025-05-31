@@ -1,6 +1,44 @@
-# Système Solaire OpenGL
+# Projet Académique OpenGL - Système Solaire et Scènes 3D
 
-## Section Développeur
+## Contexte du Projet
+Ce projet a été réalisé dans le cadre d'un cours académique sur la programmation graphique avec OpenGL. Réalisé en groupe de 4, il vise à démontrer la maîtrise des concepts fondamentaux de la programmation 3D et des shaders.
+
+### Objectifs Accomplis
+1. **Affichage 3D Avancé**
+   - Multiple shaders implémentés (Basic, Color, EnvMap)
+   - Gestion du sRGB
+   - Support des fichiers OBJ avec TinyOBJLoader
+   - Gestion complète des matériaux (ambient, diffuse, specular)
+   - Multiples modèles d'illumination :
+     - Lambert
+     - Phong
+     - Blinn-Phong
+
+2. **Navigation et Gestion de Scène**
+   - Système de caméra libre avec contrôles WASD
+   - Utilisation d'UBO pour :
+     - Matrices de projection et vue
+     - Transformations des objets
+   - Multiples scènes :
+     - Système solaire interactif
+     - Scène de démonstration
+     - Création de scènes personnalisées
+
+3. **Fonctionnalités Avancées**
+   - Implémentation d'une classe Mat4 personnalisée
+   - Interface graphique complète avec ImGui
+   - Gestion des transformations (position, rotation, échelle)
+   - Chargement dynamique de modèles 3D
+   - Skybox
+
+4. **Améliorations Techniques**
+   - Gestion de la mémoire avec smart pointers
+   - Architecture orientée objet
+   - Système de gestion de ressources
+   - Support du wireframe
+   - Gestion des lumières multiples
+
+## Installation et Utilisation
 
 ### 1. Installation de l'environnement de développement
 
@@ -83,11 +121,11 @@ pacman -S mingw-w64-x86_64-glew
    - Light Settings : Contrôle de l'éclairage
 
 ### 3. Contrôles
-- ZQSD/WASD : Déplacement caméra
+- WASD/ZQSD : Déplacement caméra
 - Souris : Rotation caméra
-- Espace : Monter
-- Ctrl : Descendre
-- Échap : Menu
+- O : Verrouiller/Déverrouiller la souris
+- 1, 2 : Changer de scène
+- N, P : Navigation entre les scènes
 
 ### 4. Fonctionnalités
 - Système solaire interactif

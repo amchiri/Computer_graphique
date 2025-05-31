@@ -117,13 +117,13 @@ private:
 // Ajouter après la classe DemoScene
 class EmptyScene : public Scene {
 public:
-    EmptyScene(const std::string& name) : Scene(name) {}
+    EmptyScene(const std::string& name);
     virtual ~EmptyScene() override = default;
 
-    bool Initialize() override { return InitializeShaders(); }
-    void Update(float deltaTime) override {}
-    void Render(const Mat4& projection, const Mat4& view) override {}
-    void Cleanup() override {}
+    bool Initialize() override;
+    void Update(float deltaTime) override;
+    void Render(const Mat4& projection, const Mat4& view) override;
+    void Cleanup() override;
 };
 
 // Gestionnaire de scènes
