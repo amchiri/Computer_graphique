@@ -60,6 +60,9 @@ public:
         }
     }
 
+    // Ajouter la déclaration de la fonction GetShaderPath
+    std::string GetShaderPath(const std::string& filename);
+
 protected:
     std::string m_name;
     std::vector<Mesh*> m_objects;

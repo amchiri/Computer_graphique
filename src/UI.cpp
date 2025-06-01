@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <GL/glew.h>
 #include <algorithm>
+#include <iostream>
 
 UI::UI(GLFWwindow* window, int width, int height) 
     : m_Window(window)
@@ -64,7 +65,7 @@ void UI::RenderUI(float fps, const float* cameraPos, const float* cameraDir) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-
+    
     // Mettre à jour les objets de la scène courante
     auto& sceneManager = SceneManager::GetInstance();
     Scene* currentScene = sceneManager.GetActiveScene();
@@ -316,6 +317,13 @@ void UI::ShowShaderSettings() {
 }
 
 void UI::SetSceneObjects(const std::vector<Mesh*>& objects, Mesh* sun, const std::vector<Planet>& planets) {
+    // Reset les pointeurs avant d'assigner les nouveaux
+    m_SceneObjects = nullptr;
+    m_Sun = nullptr;
+    m_Planets = nullptr;
+    m_SelectedObject = -1;
+
+    // Assigner les nouveaux pointeurs
     m_SceneObjects = const_cast<std::vector<Mesh*>*>(&objects);
     m_Sun = sun;
     m_Planets = const_cast<std::vector<Planet>*>(&planets);
@@ -385,12 +393,32 @@ void UI::ShowNewSceneDialog() {
         
         if (ImGui::Button("Create")) {
             if (strlen(m_NewSceneName) > 0) {
+                std::cout << "=== Creating new scene ===" << std::endl;
+                std::cout << "Scene name: " << m_NewSceneName << std::endl;
+                
                 auto& sceneManager = SceneManager::GetInstance();
-                // Créer une nouvelle scène vide au lieu d'une copie de DemoScene
+                
+                // Reset l'UI avant la création de la nouvelle scène
+                SetSceneObjects({}, nullptr, {});
+                
+                std::cout << "Creating EmptyScene..." << std::endl;
                 auto newScene = std::make_unique<EmptyScene>(m_NewSceneName);
-                if (newScene->Initialize()) {
+                
+                std::cout << "Initializing scene..." << std::endl;
+                bool initSuccess = newScene->Initialize();
+                std::cout << "Init result: " << (initSuccess ? "success" : "failed") << std::endl;
+                
+                if (initSuccess) {
+                    std::cout << "Adding scene to manager..." << std::endl;
                     sceneManager.AddScene(std::move(newScene));
-                    sceneManager.SetActiveScene(m_NewSceneName);
+                    std::cout << "Setting as active scene..." << std::endl;
+                    if (sceneManager.SetActiveScene(m_NewSceneName)) {
+                        std::cout << "Scene creation successful" << std::endl;
+                    } else {
+                        std::cerr << "Failed to set active scene!" << std::endl;
+                    }
+                } else {
+                    std::cerr << "Failed to initialize new scene!" << std::endl;
                 }
                 
                 m_ShowNewSceneDialog = false;

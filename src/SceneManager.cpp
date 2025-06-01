@@ -4,32 +4,129 @@
 #include <cstdio>  // Pour sprintf
 #include "../include/CameraController.h" // Ajouté pour CameraController
 #include <UBOManager.h>
+#include <filesystem> // Pour vérifier l'existence des fichiers
 
 // Définir MAX_LIGHTS en haut du fichier
 #define MAX_LIGHTS 10
 
 // ==================== Scene Implementation ====================
 
+std::string Scene::GetShaderPath(const std::string& filename) {
+    // Obtenir le chemin de l'exécutable
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::filesystem::path executablePath = std::filesystem::path(exePath).parent_path();
+    std::cout << "Executable path: " << executablePath << std::endl;
+
+    // Chemins possibles pour les shaders
+    std::vector<std::filesystem::path> searchPaths = {
+        executablePath / "assets" / "shaders",
+        executablePath / ".." / "assets" / "shaders",
+        executablePath / ".." / ".." / "assets" / "shaders",
+        std::filesystem::current_path() / "assets" / "shaders",
+        "assets/shaders"  // Chemin relatif de base
+    };
+
+    for (const auto& basePath : searchPaths) {
+        std::filesystem::path shaderPath = basePath / filename;
+        std::cout << "Trying path: " << shaderPath << std::endl;
+        if (std::filesystem::exists(shaderPath)) {
+            std::cout << "Found shader at: " << shaderPath << std::endl;
+            return shaderPath.string();
+        }
+    }
+
+    std::cerr << "Could not find shader file: " << filename << " in any search path" << std::endl;
+    return filename;
+}
+
 bool Scene::InitializeShaders() {
-    // Charger les shaders de base pour la scène
-    if (!m_basicShader.LoadVertexShader("assets/shaders/Basic.vs") ||
-        !m_basicShader.LoadFragmentShader("assets/shaders/Basic.fs") ||
-        !m_basicShader.Create()) {
+    std::cout << "Loading Basic shader..." << std::endl;
+    
+    std::string baseDir = std::filesystem::current_path().string();
+    std::cout << "Current working directory before shader loading: " << baseDir << std::endl;
+    
+    // Sauvegarder le répertoire de travail actuel
+    char previousDir[MAX_PATH];
+    GetCurrentDirectoryA(MAX_PATH, previousDir);
+    
+    // Essayer de revenir au répertoire de l'exécutable
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::filesystem::path executableDir = std::filesystem::path(exePath).parent_path();
+    SetCurrentDirectoryA(executableDir.string().c_str());
+    
+    std::string basicVS = GetShaderPath("Basic.vs");
+    std::string basicFS = GetShaderPath("Basic.fs");
+    std::string colorVS = GetShaderPath("Color.vs");
+    std::string colorFS = GetShaderPath("Color.fs");
+    std::string envMapVS = GetShaderPath("EnvMap.vs");
+    std::string envMapFS = GetShaderPath("EnvMap.fs");
+    
+    if (!std::filesystem::exists(basicVS) || !std::filesystem::exists(basicFS)) {
+        std::cerr << "Basic shader files not found at: " << basicVS << std::endl;
         return false;
     }
 
-    if (!m_colorShader.LoadVertexShader("assets/shaders/Color.vs") ||
-        !m_colorShader.LoadFragmentShader("assets/shaders/Color.fs") ||
-        !m_colorShader.Create()) {
+    if (!m_basicShader.LoadVertexShader(basicVS.c_str())) {
+        std::cerr << "Failed to load Basic vertex shader" << std::endl;
+        return false;
+    }
+    if (!m_basicShader.LoadFragmentShader(basicFS.c_str())) {
+        std::cerr << "Failed to load Basic fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_basicShader.Create()) {
+        std::cerr << "Failed to create Basic shader program" << std::endl;
         return false;
     }
 
-    if (!m_envMapShader.LoadVertexShader("assets/shaders/EnvMap.vs") ||
-        !m_envMapShader.LoadFragmentShader("assets/shaders/EnvMap.fs") ||
-        !m_envMapShader.Create()) {
+    std::cout << "Loading Color shader..." << std::endl;
+    
+    if (!std::filesystem::exists(colorVS) ||
+        !std::filesystem::exists(colorFS)) {
+        std::cerr << "Color shader files not found!" << std::endl;
         return false;
     }
 
+    if (!m_colorShader.LoadVertexShader(colorVS.c_str())) {
+        std::cerr << "Failed to load Color vertex shader" << std::endl;
+        return false;
+    }
+    if (!m_colorShader.LoadFragmentShader(colorFS.c_str())) {
+        std::cerr << "Failed to load Color fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_colorShader.Create()) {
+        std::cerr << "Failed to create Color shader program" << std::endl;
+        return false;
+    }
+
+    std::cout << "Loading EnvMap shader..." << std::endl;
+    
+    if (!std::filesystem::exists(envMapVS) ||
+        !std::filesystem::exists(envMapFS)) {
+        std::cerr << "EnvMap shader files not found!" << std::endl;
+        return false;
+    }
+
+    if (!m_envMapShader.LoadVertexShader(envMapVS.c_str())) {
+        std::cerr << "Failed to load EnvMap vertex shader" << std::endl;
+        return false;
+    }
+    if (!m_envMapShader.LoadFragmentShader(envMapFS.c_str())) {
+        std::cerr << "Failed to load EnvMap fragment shader" << std::endl;
+        return false;
+    }
+    if (!m_envMapShader.Create()) {
+        std::cerr << "Failed to create EnvMap shader program" << std::endl;
+        return false;
+    }
+
+    // Restaurer le répertoire de travail précédent
+    SetCurrentDirectoryA(previousDir);
+    
+    std::cout << "All shaders loaded successfully" << std::endl;
     return true;
 }
 
@@ -530,10 +627,25 @@ EmptyScene::EmptyScene(const std::string& name) : Scene(name) {
 }
 
 bool EmptyScene::Initialize() {
-    if (!InitializeShaders()) {
-        std::cerr << "Failed to initialize shaders for EmptyScene" << std::endl;
+    std::cout << "=== EmptyScene::Initialize called ===" << std::endl;
+    
+    try {
+        std::cout << "Initializing shaders..." << std::endl;
+        if (!InitializeShaders()) {
+            std::cerr << "Failed to initialize shaders for EmptyScene" << std::endl;
+            return false;
+        }
+        std::cout << "EmptyScene shaders initialized successfully" << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Exception during shader initialization: " << e.what() << std::endl;
         return false;
     }
+    catch (...) {
+        std::cerr << "Unknown exception during shader initialization!" << std::endl;
+        return false;
+    }
+    
     return true;
 }
 
@@ -560,11 +672,20 @@ void EmptyScene::Render(const Mat4& projection, const Mat4& view) {
 }
 
 void EmptyScene::Cleanup() {
+    std::cout << "=== EmptyScene::Cleanup called ===" << std::endl;
+    std::cout << "Number of objects to clean: " << m_objects.size() << std::endl;
+    
     for (Mesh* obj : m_objects) {
-        delete obj;
+        if (obj) {
+            std::cout << "Deleting object at " << obj << std::endl;
+            delete obj;
+        }
     }
     m_objects.clear();
+    std::cout << "Objects cleared" << std::endl;
+    
     CleanupShaders();
+    std::cout << "Shaders cleaned up" << std::endl;
 }
 
 // ==================== SceneManager Implementation ====================
@@ -575,34 +696,68 @@ SceneManager& SceneManager::GetInstance() {
 }
 
 void SceneManager::AddScene(std::unique_ptr<Scene> scene) {
+    std::cout << "=== AddScene called ===" << std::endl;
     std::string name = scene->GetName();
+    std::cout << "Adding scene: " << name << std::endl;
     m_scenes[name] = std::move(scene);
     m_sceneOrder.push_back(name);
+    std::cout << "Scene added successfully" << std::endl;
 }
 
 bool SceneManager::SetActiveScene(const std::string& sceneName) {
+    std::cout << "=== SetActiveScene called ===" << std::endl;
+    std::cout << "Attempting to set scene: " << sceneName << std::endl;
+    
+    if (g_UI) {
+        std::cout << "Resetting UI..." << std::endl;
+        g_UI->SetSceneObjects({}, nullptr, {});
+    }
+
     auto it = m_scenes.find(sceneName);
     if (it == m_scenes.end()) {
         std::cerr << "Scene '" << sceneName << "' not found" << std::endl;
         return false;
     }
 
+    if (!it->second) {
+        std::cerr << "Scene pointer is null!" << std::endl;
+        return false;
+    }
+
+    std::cout << "Setting active scene..." << std::endl;
     m_activeScene = it->second.get();
     m_activeSceneName = sceneName;
 
-    // Mise à jour de l'UI avec les objets de la nouvelle scène
-    if (g_UI) {
+    std::cout << "Updating UI with new scene objects..." << std::endl;
+    if (g_UI && m_activeScene) {
+        const auto& objects = m_activeScene->GetObjects();
+        std::cout << "Number of objects in scene: " << objects.size() << std::endl;
         g_UI->SetSceneObjects(
-            m_activeScene->GetObjects(),
+            objects,
             m_activeScene->GetSun(),
             m_activeScene->GetPlanets()
         );
     }
 
+    std::cout << "Scene change completed successfully" << std::endl;
     return true;
 }
 
 bool SceneManager::Initialize() {
+    // Vérifier et configurer le répertoire de base
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::filesystem::path basePath = std::filesystem::path(exePath).parent_path();
+    std::cout << "Application base path: " << basePath << std::endl;
+    
+    // Vérifier l'existence des dossiers essentiels
+    if (!std::filesystem::exists(basePath / "assets")) {
+        std::cerr << "Warning: 'assets' directory not found at: " << basePath << std::endl;
+    }
+    if (!std::filesystem::exists(basePath / "assets" / "shaders")) {
+        std::cerr << "Warning: 'shaders' directory not found at: " << (basePath / "assets") << std::endl;
+    }
+
     // Initialiser toutes les scènes
     for (auto& pair : m_scenes) {
         if (!pair.second->Initialize()) {
