@@ -40,6 +40,19 @@ std::string Scene::GetShaderPath(const std::string& filename) {
     return filename;
 }
 
+bool Scene::InitializeCubeMap() {
+    std::cout << "Initializing cubemap..." << std::endl;
+    
+    // Créer un cubemap procédural par défaut
+    if (m_CubeMap.CreateProcedural()) {
+        std::cout << "Procedural cubemap created successfully!" << std::endl;
+        return true;
+    }
+    
+    std::cerr << "Failed to create cubemap!" << std::endl;
+    return false;
+}
+
 bool Scene::InitializeShaders() {
     std::cout << "Loading Basic shader..." << std::endl;
     
@@ -125,6 +138,12 @@ bool Scene::InitializeShaders() {
 
     // Restaurer le répertoire de travail précédent
     SetCurrentDirectoryA(previousDir);
+    
+    // Initialiser le cubemap après les shaders
+    if (!InitializeCubeMap()) {
+        std::cerr << "Failed to initialize cubemap" << std::endl;
+        // On continue quand même, ce n'est pas critique
+    }
     
     std::cout << "All shaders loaded successfully" << std::endl;
     return true;
@@ -284,6 +303,26 @@ void SolarSystemScene::setupBasicShader(GLuint program, Mesh* obj, float* light_
     if (loc_isEmissive >= 0) glUniform1i(loc_isEmissive, mat.isEmissive ? 1 : 0);
     if (loc_emissiveIntensity >= 0) glUniform1f(loc_emissiveIntensity, mat.emissiveIntensity);
     if (loc_lightColor >= 0) glUniform3fv(loc_lightColor, 1, mat.lightColor);
+    
+    // Gérer l'affichage de la texture pour le shader Basic - CORRECTION COMPLÈTE
+    GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+    GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+    
+    bool hasTexture = (obj->getMaterial().diffuseMap != 0);
+    if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, hasTexture);
+    if (loc_useTexture >= 0) glUniform1i(loc_useTexture, mat.useTextureInBasicShader);
+    
+    // Lier la texture seulement si on veut l'utiliser ET qu'elle existe
+    if (hasTexture && mat.useTextureInBasicShader) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, obj->getMaterial().diffuseMap);
+        GLint loc_texture = glGetUniformLocation(program, "u_texture");
+        if (loc_texture >= 0) glUniform1i(loc_texture, 0);
+    } else {
+        // IMPORTANT: Débinder la texture si on ne l'utilise pas
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 void SolarSystemScene::setupColorShader(GLuint program, Mesh* obj) {
@@ -291,6 +330,26 @@ void SolarSystemScene::setupColorShader(GLuint program, Mesh* obj) {
     GLint loc_color = glGetUniformLocation(program, "u_color");
     if (loc_color >= 0) {
         glUniform3fv(loc_color, 1, mat.diffuse);
+    }
+    
+    // Gérer l'affichage de la texture pour le shader Color - CORRECTION
+    GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+    GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+    
+    bool hasTexture = (obj->getMaterial().diffuseMap != 0);
+    if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, hasTexture);
+    if (loc_useTexture >= 0) glUniform1i(loc_useTexture, mat.useTextureInColorShader);
+    
+    // Lier la texture seulement si on veut l'utiliser ET qu'elle existe
+    if (hasTexture && mat.useTextureInColorShader) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, obj->getMaterial().diffuseMap);
+        GLint loc_texture = glGetUniformLocation(program, "u_texture");
+        if (loc_texture >= 0) glUniform1i(loc_texture, 0);
+    } else {
+        // IMPORTANT: Débinder la texture si on ne l'utilise pas
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 }
 
@@ -301,14 +360,58 @@ void SolarSystemScene::setupEnvMapShader(GLuint program, Mesh* obj, const float*
     GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
     if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, cameraPos);
     
-    // Paramètres du matériau pour l'environment mapping
-    GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
-    GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
-    GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+    // Nouveau uniform pour ignorer le matériau
+    GLint loc_ignoreMaterial = glGetUniformLocation(program, "u_ignoreObjectMaterial");
+    if (loc_ignoreMaterial >= 0) glUniform1i(loc_ignoreMaterial, mat.ignoreObjectMaterialInEnvMap);
     
-    if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
-    if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
-    if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
+    // Si on ignore le matériau, pas besoin de configurer les autres paramètres
+    if (!mat.ignoreObjectMaterialInEnvMap) {
+        // Paramètres du matériau pour l'environment mapping
+        GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+        GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+        GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+        GLint loc_specularStrength = glGetUniformLocation(program, "u_material.specularStrength");
+        
+        if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
+        if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
+        if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
+        if (loc_specularStrength >= 0) glUniform1f(loc_specularStrength, mat.specularStrength);
+        
+        // Gérer l'affichage de la texture pour le shader EnvMap
+        GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+        GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+        
+        bool hasTexture = (obj->getMaterial().diffuseMap != 0);
+        if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, hasTexture);
+        if (loc_useTexture >= 0) glUniform1i(loc_useTexture, mat.useTextureInEnvMapShader);
+        
+        // Lier la texture seulement si on veut l'utiliser ET qu'elle existe
+        if (hasTexture && mat.useTextureInEnvMapShader) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, obj->getMaterial().diffuseMap);
+            GLint loc_texture = glGetUniformLocation(program, "u_texture");
+            if (loc_texture >= 0) glUniform1i(loc_texture, 1);
+        } else {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+    } else {
+        // Si on ignore le matériau, débinder toutes les textures
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        
+        GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+        GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+        if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, 0);
+        if (loc_useTexture >= 0) glUniform1i(loc_useTexture, 0);
+    }
+    
+    // Associer le cubemap au shader (unité de texture 0) - toujours nécessaire
+    if (m_CubeMap.IsLoaded()) {
+        m_CubeMap.Bind(0);
+        GLint loc_envmap = glGetUniformLocation(program, "u_envmap");
+        if (loc_envmap >= 0) glUniform1i(loc_envmap, 0);
+    }
 }
 
 void SolarSystemScene::Cleanup() {
@@ -521,6 +624,26 @@ void DemoScene::setupColorShaderDemo(GLuint program, Mesh* obj) {
     if (loc_color >= 0) {
         glUniform3fv(loc_color, 1, mat.diffuse);
     }
+    
+    // Gérer l'affichage de la texture pour le shader Color - CORRECTION
+    GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+    GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+    
+    bool hasTexture = (obj->getMaterial().diffuseMap != 0);
+    if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, hasTexture);
+    if (loc_useTexture >= 0) glUniform1i(loc_useTexture, mat.useTextureInColorShader);
+    
+    // Lier la texture seulement si on veut l'utiliser ET qu'elle existe
+    if (hasTexture && mat.useTextureInColorShader) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, obj->getMaterial().diffuseMap);
+        GLint loc_texture = glGetUniformLocation(program, "u_texture");
+        if (loc_texture >= 0) glUniform1i(loc_texture, 0);
+    } else {
+        // IMPORTANT: Débinder la texture si on ne l'utilise pas
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 void DemoScene::setupBasicShaderDemo(GLuint program, Mesh* obj, float* light_color, float light_intensity, float* lightPos, const float* cameraPos) {
@@ -555,6 +678,26 @@ void DemoScene::setupBasicShaderDemo(GLuint program, Mesh* obj, float* light_col
     if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
     if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
     if (loc_isEmissive >= 0) glUniform1i(loc_isEmissive, mat.isEmissive ? 1 : 0);
+    
+    // Gérer l'affichage de la texture pour le shader Basic - CORRECTION
+    GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+    GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+    
+    bool hasTexture = (obj->getMaterial().diffuseMap != 0);
+    if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, hasTexture);
+    if (loc_useTexture >= 0) glUniform1i(loc_useTexture, mat.useTextureInBasicShader);
+    
+    // Lier la texture seulement si on veut l'utiliser ET qu'elle existe
+    if (hasTexture && mat.useTextureInBasicShader) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, obj->getMaterial().diffuseMap);
+        GLint loc_texture = glGetUniformLocation(program, "u_texture");
+        if (loc_texture >= 0) glUniform1i(loc_texture, 0);
+    } else {
+        // IMPORTANT: Débinder la texture si on ne l'utilise pas
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 void DemoScene::setupEnvMapShaderDemo(GLuint program, Mesh* obj, const float* cameraPos) {
@@ -563,13 +706,56 @@ void DemoScene::setupEnvMapShaderDemo(GLuint program, Mesh* obj, const float* ca
     GLint loc_viewPos = glGetUniformLocation(program, "u_viewPos");
     if (loc_viewPos >= 0) glUniform3fv(loc_viewPos, 1, cameraPos);
     
-    GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
-    GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
-    GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+    // Nouveau uniform pour ignorer le matériau
+    GLint loc_ignoreMaterial = glGetUniformLocation(program, "u_ignoreObjectMaterial");
+    if (loc_ignoreMaterial >= 0) glUniform1i(loc_ignoreMaterial, mat.ignoreObjectMaterialInEnvMap);
     
-    if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
-    if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
-    if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
+    // Si on ignore le matériau, pas besoin de configurer les autres paramètres
+    if (!mat.ignoreObjectMaterialInEnvMap) {
+        GLint loc_matDiffuse = glGetUniformLocation(program, "u_material.diffuseColor");
+        GLint loc_matSpecular = glGetUniformLocation(program, "u_material.specularColor");
+        GLint loc_matShininess = glGetUniformLocation(program, "u_material.shininess");
+        GLint loc_specularStrength = glGetUniformLocation(program, "u_material.specularStrength");
+        
+        if (loc_matDiffuse >= 0) glUniform3fv(loc_matDiffuse, 1, mat.diffuse);
+        if (loc_matSpecular >= 0) glUniform3fv(loc_matSpecular, 1, mat.specular);
+        if (loc_matShininess >= 0) glUniform1f(loc_matShininess, mat.shininess);
+        if (loc_specularStrength >= 0) glUniform1f(loc_specularStrength, mat.specularStrength);
+        
+        // Gérer l'affichage de la texture pour le shader EnvMap
+        GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+        GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+        
+        bool hasTexture = (obj->getMaterial().diffuseMap != 0);
+        if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, hasTexture);
+        if (loc_useTexture >= 0) glUniform1i(loc_useTexture, mat.useTextureInEnvMapShader);
+        
+        if (hasTexture && mat.useTextureInEnvMapShader) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, obj->getMaterial().diffuseMap);
+            GLint loc_texture = glGetUniformLocation(program, "u_texture");
+            if (loc_texture >= 0) glUniform1i(loc_texture, 1);
+        } else {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+    } else {
+        // Si on ignore le matériau, débinder toutes les textures
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        
+        GLint loc_useTexture = glGetUniformLocation(program, "u_useTexture");
+        GLint loc_hasTexture = glGetUniformLocation(program, "u_hasTexture");
+        if (loc_hasTexture >= 0) glUniform1i(loc_hasTexture, 0);
+        if (loc_useTexture >= 0) glUniform1i(loc_useTexture, 0);
+    }
+    
+    // Associer le cubemap au shader
+    if (m_CubeMap.IsLoaded()) {
+        m_CubeMap.Bind(0);
+        GLint loc_envmap = glGetUniformLocation(program, "u_envmap");
+        if (loc_envmap >= 0) glUniform1i(loc_envmap, 0);
+    }
 }
 
 void DemoScene::Cleanup() {

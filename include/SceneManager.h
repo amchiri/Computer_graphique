@@ -10,6 +10,7 @@
 #include "Planet.h"
 #include "Mat4.h"
 #include "UI.h" // Ajouter cet include au début du fichier
+#include "CubeMap.h"
 
 // Déclarer g_UI comme externe en haut du fichier, après les includes
 extern std::unique_ptr<UI> g_UI;
@@ -44,6 +45,9 @@ public:
     GLShader& GetColorShader() { return m_colorShader; }
     GLShader& GetEnvMapShader() { return m_envMapShader; }
 
+    // Accesseur pour le CubeMap
+    CubeMap& GetCubeMap() { return m_CubeMap; }
+
     // Ajouter cette méthode
     virtual void AddObject(Mesh* object) { 
         if (object) {
@@ -75,6 +79,12 @@ protected:
     GLShader m_basicShader;
     GLShader m_colorShader;
     GLShader m_envMapShader;
+
+    // Ajouter le CubeMap
+    CubeMap m_CubeMap;
+    
+    // Méthode pour initialiser le CubeMap
+    bool InitializeCubeMap();
 };
 
 // Scène du système solaire

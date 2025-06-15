@@ -17,19 +17,23 @@ struct Vertex {
 struct Material {
     float diffuse[3] = {0.8f, 0.8f, 0.8f};
     float specular[3] = {1.0f, 1.0f, 1.0f};
-    float ambient[3] = {0.2f, 0.2f, 0.2f};  // Ajout du composant ambient
+    float ambient[3] = {0.2f, 0.2f, 0.2f};
     float shininess = 32.0f;
     GLuint diffuseMap = 0;
     bool isEmissive = false;
-    float emissiveIntensity = 1.0f;  // Nouvelle propriété
-    float lightColor[3] = {1.0f, 1.0f, 1.0f};  // Nouvelle propriété
-    float specularStrength = 0.5f;  // Ajouté pour correspondre au shader
+    float emissiveIntensity = 1.0f;
+    float lightColor[3] = {1.0f, 1.0f, 1.0f};
+    float specularStrength = 0.5f;
+    bool useTextureInColorShader = false;
+    bool useTextureInEnvMapShader = false;
+    bool useTextureInBasicShader = true;
+    bool ignoreObjectMaterialInEnvMap = false; // Nouvelle propriété pour ignorer le matériau
 
     enum class IlluminationModel {
         LAMBERT = 0,
         PHONG = 1,
         BLINN_PHONG = 2
-    } illuminationModel = IlluminationModel::BLINN_PHONG;  // Par défaut
+    } illuminationModel = IlluminationModel::BLINN_PHONG;
 };
 
 class Mesh {
@@ -51,6 +55,9 @@ public:
     // Ces méthodes doivent être publiques (et une seule déclaration !)
     void calculateModelMatrix(float* outMatrix);
     bool loadTexture(const char* filename);
+    void removeTexture(); // Nouvelle méthode pour supprimer la texture
+    void unbindTexture();
+    void bindTexture();
 
     // Ajoute ces deux méthodes publiques :
     bool loadFromOBJFile(const char* filename);
@@ -67,6 +74,7 @@ private:
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     Material material;
+    bool textureEnabled = true;
     
     GLuint VAO, VBO, EBO;
     float position[3] = {0.0f, 0.0f, 0.0f};

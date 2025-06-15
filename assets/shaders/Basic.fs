@@ -26,6 +26,7 @@ uniform Material u_material;
 uniform sampler2D u_texture;
 uniform vec3 u_viewPos;
 uniform bool u_hasTexture;  // Ajout d'un uniform pour gérer la présence de texture
+uniform bool u_useTexture; // Ajouter les uniformes pour contrôler la texture
 
 // Nouveau uniform pour recevoir les lumières émissives
 #define MAX_EMISSIVE_LIGHTS 10

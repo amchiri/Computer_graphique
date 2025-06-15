@@ -205,18 +205,39 @@ void UI::ShowShaderSettings() {
         if (!currentScene) return;
 
         // Contrôles pour chaque objet (soleil, planètes, etc.)
-        for (Mesh* obj : *m_SceneObjects) {
-            // Créer un label unique pour chaque objet
-            std::string label = (obj == m_Sun) ? "Sun" : "Object";
-            if (obj != m_Sun) {
+        for (size_t objIndex = 0; objIndex < m_SceneObjects->size(); objIndex++) {
+            Mesh* obj = (*m_SceneObjects)[objIndex];
+            
+            // Créer un label unique pour chaque objet avec un ID unique
+            std::string label;
+            std::string uniqueID;
+            
+            if (obj == m_Sun) {
+                label = "Sun";
+                uniqueID = "sun_shader_settings";
+            } else {
                 // Chercher si c'est une planète
                 auto it = std::find_if(m_Planets->begin(), m_Planets->end(),
                     [obj](const Planet& p) { return p.GetMesh() == obj; });
                 if (it != m_Planets->end()) {
-                    label = "Planet " + std::to_string(it - m_Planets->begin());
+                    size_t planetIndex = it - m_Planets->begin();
+                    const char* planetNames[] = {"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus"};
+                    if (planetIndex < 7) {
+                        label = planetNames[planetIndex];
+                    } else {
+                        label = "Planet " + std::to_string(planetIndex);
+                    }
+                    uniqueID = "planet_" + std::to_string(planetIndex) + "_shader_settings";
+                } else {
+                    // Objet personnalisé
+                    label = "Custom Object " + std::to_string(objIndex);
+                    uniqueID = "custom_obj_" + std::to_string(objIndex) + "_shader_settings";
                 }
             }
 
+            // Utiliser un ID unique pour éviter les conflits
+            ImGui::PushID(uniqueID.c_str());
+            
             if (ImGui::TreeNode(label.c_str())) {
                 // Sélection du shader
                 GLShader* currentShader = obj->getCurrentShader();
@@ -245,43 +266,161 @@ void UI::ShowShaderSettings() {
                 }
 
                 if (shaderChanged) {
+                    // Gestion automatique de l'activation/désactivation de texture selon le shader
+                    Material mat = obj->getMaterial();
+                    
                     switch (current_shader) {
-                        case 0: obj->setCurrentShader(basicShader); break;
-                        case 1: obj->setCurrentShader(colorShader); break;
-                        case 2: obj->setCurrentShader(envMapShader); break;
+                        case 0: // Basic shader
+                            obj->setCurrentShader(basicShader);
+                            obj->bindTexture();
+                            break;
+                        case 1: // Color shader
+                            obj->setCurrentShader(colorShader);
+                            obj->unbindTexture();
+                            break;
+                        case 2: // EnvMap shader
+                            obj->setCurrentShader(envMapShader);
+                            obj->unbindTexture();
+                            break;
                     }
+                    currentShader = obj->getCurrentShader();
                 }
 
-                // Paramètres du matériau selon le shader
+                ImGui::Separator();
+
+                // Paramètres spécifiques selon le shader sélectionné
                 Material mat = obj->getMaterial();
                 bool materialChanged = false;
 
                 if (currentShader == colorShader) {
-                    if (ImGui::ColorEdit3("Color", mat.diffuse)) {
+                    // SHADER COLOR - Paramètres simples
+                    ImGui::Text("Color Shader Parameters");
+                    if (ImGui::ColorEdit3("Object Color", mat.diffuse)) {
                         materialChanged = true;
+                    }
+                    // Propriété émissive pour le shader Color
+                    if (ImGui::Checkbox("Emissive", &mat.isEmissive)) materialChanged = true;
+                    if (mat.isEmissive) {
+                        if (ImGui::ColorEdit3("Emissive Color", mat.lightColor)) materialChanged = true;
+                        if (ImGui::SliderFloat("Emissive Intensity", &mat.emissiveIntensity, 0.0f, 10.0f)) materialChanged = true;
                     }
                 } 
                 else if (currentShader == envMapShader) {
-                    if (ImGui::ColorEdit3("Reflection Color", mat.specular)) {
+                    // SHADER ENVMAP - Paramètres de réflexion et cubemap
+                    ImGui::Text("Environment Mapping Parameters");
+                    
+                    if (ImGui::ColorEdit3("Base Color", mat.diffuse)) {
                         materialChanged = true;
                     }
-                    if (ImGui::SliderFloat("Reflection Strength", &mat.specularStrength, 0.0f, 1.0f)) {
+                    
+                    // Option pour afficher la texture de l'objet dans le shader EnvMap
+                    bool hasTexture = (mat.diffuseMap != 0);
+                    if (hasTexture) {
+                        if (ImGui::Checkbox("Use Object Texture", &mat.useTextureInEnvMapShader)) {
+                            materialChanged = true;
+                        }
+                        if (mat.useTextureInEnvMapShader) {
+                            ImGui::Text("Texture will be mixed with base color before reflection");
+                        } else {
+                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Object texture ignored - using base color only");
+                        }
+                    } else {
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No texture available");
+                    }
+                    
+                    if (ImGui::SliderFloat("Reflection Strength", &mat.specularStrength, 0.0f, 2.0f)) {
                         materialChanged = true;
+                    }
+                    
+                    if (ImGui::ColorEdit3("Specular Tint", mat.specular)) {
+                        materialChanged = true;
+                    }
+                    
+                    if (ImGui::SliderFloat("Surface Roughness", &mat.shininess, 1.0f, 128.0f)) {
+                        materialChanged = true;
+                    }
+                    
+                    ImGui::Separator();
+                    ImGui::Text("CubeMap Controls");
+                    
+                    // Boutons pour gérer le cubemap
+                    if (ImGui::Button("Reload CubeMap")) {
+                        currentScene->GetCubeMap().Reload();
+                    }
+                    
+                    ImGui::SameLine();
+                    
+                    if (ImGui::Button("Load CubeMap Files")) {
+                        // Ouvrir une boîte de dialogue pour sélectionner les 6 fichiers
+                        OPENFILENAMEA ofn;
+                        char szFile[256] = { 0 };
+                        
+                        ZeroMemory(&ofn, sizeof(ofn));
+                        ofn.lStructSize = sizeof(ofn);
+                        ofn.hwndOwner = glfwGetWin32Window(m_Window);
+                        ofn.lpstrFile = szFile;
+                        ofn.nMaxFile = sizeof(szFile);
+                        ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp\0All Files\0*.*\0";
+                        ofn.nFilterIndex = 1;
+                        ofn.lpstrFileTitle = NULL;
+                        ofn.nMaxFileTitle = 0;
+                        ofn.lpstrInitialDir = NULL;
+                        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+                        ofn.lpstrTitle = "Select CubeMap +X face";
+
+                        std::vector<std::string> faces(6);
+                        const char* faceNames[] = {"+X (Right)", "-X (Left)", "+Y (Top)", "-Y (Bottom)", "+Z (Back)", "-Z (Front)"};
+                        
+                        bool allSelected = true;
+                        for (int i = 0; i < 6; i++) {
+                            ofn.lpstrTitle = faceNames[i];
+                            if (GetOpenFileNameA(&ofn)) {
+                                faces[i] = szFile;
+                            } else {
+                                allSelected = false;
+                                break;
+                            }
+                        }
+                        
+                        if (allSelected) {
+                            if (currentScene->GetCubeMap().LoadFromImages(faces)) {
+                                std::cout << "CubeMap loaded successfully!" << std::endl;
+                            } else {
+                                std::cerr << "Failed to load CubeMap!" << std::endl;
+                            }
+                        }
+                    }
+                    
+                    // Afficher l'état du cubemap
+                    if (currentScene->GetCubeMap().IsLoaded()) {
+                        ImGui::TextColored(ImVec4(0, 1, 0, 1), "CubeMap: Loaded");
+                    } else {
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "CubeMap: Not Loaded");
                     }
                 }
                 else {
-                    // Paramètres pour le shader basic
+                    // SHADER BASIC - Paramètres complets d'éclairage
+                    ImGui::Text("Basic Shader Parameters");
+                    
+                    // Couleurs du matériau
                     if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
-                    if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
-                }
-
-                // Propriété émissive disponible pour tous les shaders
-                if (ImGui::Checkbox("Emissive", &mat.isEmissive)) materialChanged = true;
-                if (mat.isEmissive) {
-                    if (ImGui::ColorEdit3("Light Color", mat.lightColor)) materialChanged = true;
-                    if (ImGui::SliderFloat("Light Intensity", &mat.emissiveIntensity, 0.0f, 10.0f)) materialChanged = true;
-                }
-
+                    
+                    // Option pour afficher la texture de l'objet dans le shader Basic
+                    bool hasTexture = (mat.diffuseMap != 0);
+                    if (hasTexture) {
+                        if (ImGui::Checkbox("Use Object Texture", &mat.useTextureInBasicShader)) {
+                            materialChanged = true;
+                        }
+                        if (mat.useTextureInBasicShader) {
+                            ImGui::Text("Texture will be applied to the material");
+                        } else {
+                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Object texture ignored - using diffuse color only");
+                        }
+                    } else {
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No texture available");
+                    }
+                    
+                    // Modèle d'illumination
                     const char* illuminationModels[] = {"Lambert", "Phong", "Blinn-Phong"};
                     int currentModel = static_cast<int>(mat.illuminationModel);
                     if (ImGui::Combo("Illumination Model", &currentModel, illuminationModels, 3)) {
@@ -289,29 +428,30 @@ void UI::ShowShaderSettings() {
                         materialChanged = true;
                     }
 
-                    // Afficher les paramètres appropriés selon le modèle
-                    if (currentModel > 0) { // Phong ou Blinn-Phong
+                    // Paramètres spéculaires (seulement pour Phong et Blinn-Phong)
+                    if (currentModel > 0) {
                         if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
                         if (ImGui::SliderFloat("Specular Strength", &mat.specularStrength, 0.0f, 1.0f)) materialChanged = true;
+                        if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
                     }
-                
+                    
+                    // Propriétés émissives
+                    if (ImGui::Checkbox("Emissive", &mat.isEmissive)) materialChanged = true;
+                    if (mat.isEmissive) {
+                        if (ImGui::ColorEdit3("Emissive Color", mat.lightColor)) materialChanged = true;
+                        if (ImGui::SliderFloat("Emissive Intensity", &mat.emissiveIntensity, 0.0f, 10.0f)) materialChanged = true;
+                    }
+                }
 
+                // Appliquer les changements du matériau
                 if (materialChanged) {
                     obj->setMaterial(mat);
-                    if (GLShader* shader = obj->getCurrentShader()) {
-                        shader->Use();
-                        shader->SetVec3("u_material.diffuseColor", mat.diffuse);
-                        shader->SetVec3("u_material.specularColor", mat.specular);
-                        shader->SetFloat("u_material.shininess", mat.shininess);
-                        shader->SetBool("u_material.isEmissive", mat.isEmissive);
-                        shader->SetFloat("u_material.emissiveIntensity", mat.emissiveIntensity);
-                        shader->SetVec3("u_material.lightColor", mat.lightColor);
-                        shader->SetFloat("u_material.specularStrength", mat.specularStrength);
-                    }
                 }
 
                 ImGui::TreePop();
             }
+            
+            ImGui::PopID(); // Important : libérer l'ID unique
         }
     }
 }
@@ -445,93 +585,114 @@ void UI::ShowSceneControls() {
             m_ShowLoadModelDialog = true;
         }
 
-        if (ImGui::TreeNode("Objects")) {
+        if (ImGui::TreeNode("Custom Objects Only")) {
             const auto& objects = scene->GetObjects();
+            size_t customObjectCounter = 0;
+            
             for (size_t i = 0; i < objects.size(); i++) {
                 Mesh* obj = objects[i];
                 
-                // Vérifier si l'objet n'est pas le soleil ou une planète
-                bool isDeletable = true;
-                if (obj == m_Sun) {
-                    isDeletable = false;
-                }
-                for (const auto& planet : *m_Planets) {
-                    if (planet.GetMesh() == obj) {
-                        isDeletable = false;
-                        break;
-                    }
-                }
-
-                char label[32];
-                sprintf(label, "Object %zu", i);
+                // IGNORER le soleil et les planètes - ne montrer que les objets personnalisés
+                bool isSystemObject = false;
                 
-                if (ImGui::TreeNode(label)) {
-                    // Position
-                    float pos[3];
-                    memcpy(pos, obj->getPosition(), sizeof(float) * 3);
-                    if (ImGui::DragFloat3("Position", pos, 0.1f)) {
-                        obj->setPosition(pos[0], pos[1], pos[2]);
+                // Vérifier si c'est le soleil
+                if (obj == m_Sun) {
+                    isSystemObject = true;
+                }
+                
+                // Vérifier si c'est une planète
+                if (!isSystemObject && m_Planets) {
+                    for (const auto& planet : *m_Planets) {
+                        if (planet.GetMesh() == obj) {
+                            isSystemObject = true;
+                            break;
+                        }
                     }
+                }
+                
+                // Ne traiter que les objets personnalisés (non-système)
+                if (!isSystemObject) {
+                    std::string objectLabel = "Custom Object " + std::to_string(customObjectCounter);
+                    std::string uniqueID = "custom_scene_obj_" + std::to_string(i);
+                    
+                    ImGui::PushID(uniqueID.c_str());
+                    
+                    if (ImGui::TreeNode(objectLabel.c_str())) {
+                        // Position
+                        float pos[3];
+                        memcpy(pos, obj->getPosition(), sizeof(float) * 3);
+                        if (ImGui::DragFloat3("Position", pos, 0.1f)) {
+                            obj->setPosition(pos[0], pos[1], pos[2]);
+                        }
 
-                    // Scale
-                    float scale[3];
-                    memcpy(scale, obj->getScale(), sizeof(float) * 3);
-                    if (ImGui::DragFloat3("Scale", scale, 0.1f)) {
-                        obj->setScale(scale[0], scale[1], scale[2]);
-                    }
+                        // Scale
+                        float scale[3];
+                        memcpy(scale, obj->getScale(), sizeof(float) * 3);
+                        if (ImGui::DragFloat3("Scale", scale, 0.1f)) {
+                            obj->setScale(scale[0], scale[1], scale[2]);
+                        }
 
-                    // Rotation
-                    static float rotation[3] = {0.0f, 0.0f, 0.0f};
-                    if (ImGui::DragFloat3("Rotation", rotation, 1.0f)) {
-                        obj->setRotation(rotation[0], rotation[1], rotation[2]);
-                    }
+                        // Rotation
+                        static float rotation[3] = {0.0f, 0.0f, 0.0f};
+                        if (ImGui::DragFloat3("Rotation", rotation, 1.0f)) {
+                            obj->setRotation(rotation[0], rotation[1], rotation[2]);
+                        }
 
-                    // Bouton Delete (seulement pour les objets non-essentiels)
-                    if (isDeletable) {
+                        // Bouton Delete (toujours disponible pour les objets personnalisés)
                         if (ImGui::Button("Delete Object")) {
                             scene->RemoveObject(obj);
                             ImGui::TreePop();
+                            ImGui::PopID();
                             break;  // Sortir de la boucle car l'objet a été supprimé
                         }
-                    }
 
-                    // Shader selection
-                    GLShader* currentShader = obj->getCurrentShader();
-                    GLShader* basicShader = &scene->GetBasicShader();
-                    GLShader* colorShader = &scene->GetColorShader();
-                    GLShader* envMapShader = &scene->GetEnvMapShader();
+                        // Shader selection avec ID unique
+                        GLShader* currentShader = obj->getCurrentShader();
+                        GLShader* basicShader = &scene->GetBasicShader();
+                        GLShader* colorShader = &scene->GetColorShader();
+                        GLShader* envMapShader = &scene->GetEnvMapShader();
+                        
+                        int current_shader = 0;
+                        if (currentShader == colorShader) current_shader = 1;
+                        else if (currentShader == envMapShader) current_shader = 2;
+
+                        if (ImGui::RadioButton("Basic", current_shader == 0)) {
+                            obj->setCurrentShader(basicShader);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("Color", current_shader == 1)) {
+                            obj->setCurrentShader(colorShader);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("EnvMap", current_shader == 2)) {
+                            obj->setCurrentShader(envMapShader);
+                        }
+
+                        // Material properties
+                        Material mat = obj->getMaterial();
+                        bool materialChanged = false;
+
+                        if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
+                        if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
+                        if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
+
+                        if (materialChanged) {
+                            obj->setMaterial(mat);
+                        }
+
+                        ImGui::TreePop();
+                    }
                     
-                    int current_shader = 0;
-                    if (currentShader == colorShader) current_shader = 1;
-                    else if (currentShader == envMapShader) current_shader = 2;
-
-                    if (ImGui::RadioButton("Basic", current_shader == 0)) {
-                        obj->setCurrentShader(basicShader);
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Color", current_shader == 1)) {
-                        obj->setCurrentShader(colorShader);
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("EnvMap", current_shader == 2)) {
-                        obj->setCurrentShader(envMapShader);
-                    }
-
-                    // Material properties
-                    Material mat = obj->getMaterial();
-                    bool materialChanged = false;
-
-                    if (ImGui::ColorEdit3("Diffuse Color", mat.diffuse)) materialChanged = true;
-                    if (ImGui::ColorEdit3("Specular Color", mat.specular)) materialChanged = true;
-                    if (ImGui::SliderFloat("Shininess", &mat.shininess, 1.0f, 128.0f)) materialChanged = true;
-
-                    if (materialChanged) {
-                        obj->setMaterial(mat);
-                    }
-
-                    ImGui::TreePop();
+                    ImGui::PopID();
+                    customObjectCounter++;
                 }
             }
+            
+            if (customObjectCounter == 0) {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No custom objects in scene");
+                ImGui::Text("Use 'Load 3D Model' to add objects");
+            }
+            
             ImGui::TreePop();
         }
     }

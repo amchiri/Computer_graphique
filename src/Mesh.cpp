@@ -97,7 +97,7 @@ void Mesh::draw(GLShader& shader) {
 
     // Activer la texture seulement si elle existe
     glActiveTexture(GL_TEXTURE0);
-    if (material.diffuseMap) {
+    if (material.diffuseMap && textureEnabled) {
         glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
         GLint loc_texture = glGetUniformLocation(program, "u_texture");
         glUniform1i(loc_texture, 0);
@@ -105,6 +105,7 @@ void Mesh::draw(GLShader& shader) {
         glBindTexture(GL_TEXTURE_2D, 0);  // Unbind toute texture
     }
 
+    glUniform1i(loc_hasTexture, (material.diffuseMap != 0) && textureEnabled);
     // Gestion de l'état émissif
     GLint loc_isEmissive = glGetUniformLocation(program, "u_material.isEmissive");
     glUniform1i(loc_isEmissive, material.isEmissive ? 1 : 0);
@@ -509,5 +510,25 @@ void Mesh::calculateNormalsIfNeeded() {
             vertex.normal[1] /= length;
             vertex.normal[2] /= length;
         }
+    }
+}
+
+void Mesh::removeTexture() {
+    // Supprimer la texture OpenGL si elle existe
+    if (material.diffuseMap) {
+        glDeleteTextures(1, &material.diffuseMap);
+        material.diffuseMap = 0; // Remettre l'ID à 0
+    }
+}
+
+void Mesh::unbindTexture() {
+    textureEnabled = false;
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void Mesh::bindTexture() {
+    textureEnabled = true;
+    if (material.diffuseMap) {
+        glBindTexture(GL_TEXTURE_2D, material.diffuseMap);
     }
 }
