@@ -84,7 +84,7 @@ void Render() {
     // Configuration OpenGL
     glViewport(0, 0, width, height);
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Couleur de fond temporaire pour debug
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Matrices de transformation
@@ -107,9 +107,8 @@ void Render() {
     // Mettre à jour les UBOs avec les nouvelles matrices
     UBOManager::Get().UpdateProjectionView(projectionMatrix.data(), viewMatrix.data());
 
-    // Rendu de la skybox en premier
+    // Rendu de la skybox en premier (avec états spéciaux)
     if (g_Skybox) {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         g_Skybox->Draw(viewMatrix, projectionMatrix);
     }
 
@@ -311,3 +310,4 @@ int main() {
     
     return 0;
 }
+
