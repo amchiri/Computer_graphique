@@ -320,18 +320,6 @@ void UI::ShowShaderSettings() {
                     
                     // Option pour afficher la texture de l'objet dans le shader EnvMap
                     bool hasTexture = (mat.diffuseMap != 0);
-                    // if (hasTexture) {
-                    //     if (ImGui::Checkbox("Use Object Texture", &mat.useTextureInEnvMapShader)) {
-                    //         materialChanged = true;
-                    //     }
-                    //     if (mat.useTextureInEnvMapShader) {
-                    //         ImGui::Text("Texture will be mixed with base color before reflection");
-                    //     } else {
-                    //         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Object texture ignored - using base color only");
-                    //     }
-                    // } else {
-                    //     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No texture available");
-                    // }
                     
                     if (ImGui::SliderFloat("Reflection Strength", &mat.specularStrength, 0.0f, 2.0f)) {
                         materialChanged = true;

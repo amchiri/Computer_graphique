@@ -20,7 +20,7 @@ IMGUI_SOURCES = imgui.cpp \
 
 IMGUI_OBJECTS = $(addprefix $(BUILD_DIR)/imgui/,$(IMGUI_SOURCES:.cpp=.o))
 
-TARGET = BasicShader.exe
+TARGET = main.exe
 
 all: check-imgui $(BUILD_DIR) $(TARGET)
 
