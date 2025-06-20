@@ -474,8 +474,6 @@ void SolarSystemScene::createPlanets() {
         {28.0f, 0.4f, 1.5f},    // Terre
         {35.0f, 0.3f, 1.2f},    // Mars
         {50.0f, 0.15f, 4.0f},   // Jupiter
-        {65.0f, 0.12f, 3.5f},   // Saturne
-        {80.0f, 0.08f, 2.5f},   // Uranus
     };
 
     for(int i = 0; i < 7; i++) {
@@ -552,13 +550,21 @@ bool DemoScene::Initialize() {
 void DemoScene::Update(float deltaTime) {
     m_rotationTime += deltaTime;
     
-    // Faire tourner les objets de démonstration
+    // Faire des mouvements de va-et-vient pour les objets de démonstration
     if (m_objects.size() >= 3) {
-        // Rotation autour de l'axe Y
-        float rotation = m_rotationTime * 0.5f;
-        m_objects[0]->setRotation(0, rotation, 0);
-        m_objects[1]->setRotation(0, rotation * 1.5f, 0);
-        m_objects[2]->setRotation(0, rotation * 2.0f, 0);
+        float time = m_rotationTime;
+        
+        // Premier objet : mouvement horizontal (axe X)
+        float posX = 5.0f * sin(time * 1.0f);  // Amplitude de 5 unités, fréquence normale
+        m_objects[0]->setPosition(-8 + posX, 0, -10);
+        
+        // Deuxième objet : mouvement vertical (axe Y)
+        float posY = 3.0f * sin(time * 1.5f);  // Amplitude de 3 unités, fréquence plus rapide
+        m_objects[1]->setPosition(0, posY, -10);
+        
+        // Troisième objet : mouvement en profondeur (axe Z)
+        float posZ = 4.0f * sin(time * 0.8f);  // Amplitude de 4 unités, fréquence plus lente
+        m_objects[2]->setPosition(8, 0, -10 + posZ);
     }
 }
 
@@ -775,7 +781,7 @@ void DemoScene::createDemoObjects() {
     matColor.shininess = 1.0f;
     matColor.isEmissive = false;
     colorCube->setMaterial(matColor);
-    colorCube->setPosition(-8, 0, -10); // Ajout d'un Z négatif pour être devant la caméra
+    colorCube->setPosition(-8, 0, -10); // Position initiale
     colorCube->setCurrentShader(nullptr); // Sera assigné lors du rendu
     m_objects.push_back(colorCube);
 
@@ -789,7 +795,7 @@ void DemoScene::createDemoObjects() {
     matTex.shininess = 16.0f;
     matTex.isEmissive = false;
     texCube->setMaterial(matTex);
-    texCube->setPosition(0, 0, -10);  // Ajout d'un Z négatif pour être devant la caméra
+    texCube->setPosition(0, 0, -10);  // Position initiale
     texCube->setCurrentShader(nullptr);
     m_objects.push_back(texCube);
 
@@ -802,7 +808,7 @@ void DemoScene::createDemoObjects() {
     matEnv.shininess = 64.0f;
     matEnv.isEmissive = false;
     envCube->setMaterial(matEnv);
-    envCube->setPosition(8, 0, -10);  // Ajout d'un Z négatif pour être devant la caméra
+    envCube->setPosition(8, 0, -10);  // Position initiale
     envCube->setCurrentShader(nullptr);
     m_objects.push_back(envCube);
 }

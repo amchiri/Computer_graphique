@@ -138,3 +138,120 @@ pacman -S mingw-w64-x86_64-glew
 - Vérifier que GLFW et GLEW sont installés
 - Vérifier que les shaders sont dans `assets/shaders/`
 - Vérifier que les textures sont dans `assets/textures/`
+
+# Basic 3D Engine
+
+Un moteur de rendu 3D développé en C++ avec OpenGL, featuring un système solaire interactif et plusieurs techniques de rendu avancées.
+
+## 📹 Vidéo de Démonstration
+
+**Regardez la démonstration complète du projet ici :**
+
+[![Démonstration du projet](https://img.youtube.com/vi/wlvpWvKUzZ0/maxresdefault.jpg)](https://youtu.be/wlvpWvKUzZ0)
+
+🎥 **[Cliquez ici pour voir la vidéo explicative](https://youtu.be/wlvpWvKUzZ0)**
+
+Cette vidéo présente toutes les fonctionnalités du moteur, incluant :
+- Navigation dans le système solaire
+- Changement de shaders en temps réel
+- Chargement de modèles 3D
+- Environment mapping et réflexions
+- Gestion des scènes multiples
+
+## 🚀 Fonctionnalités
+
+### Rendu 3D Avancé
+- **Shaders multiples** : Basic (Phong/Blinn-Phong), Color, Environment Mapping
+- **Environment Mapping** : Réflexions réalistes avec support de cubemaps personnalisés
+- **Skybox dynamique** : Chargement de cubemaps depuis des dossiers
+- **Éclairage émissif** : Support de multiples sources de lumière
+
+### Système Solaire Interactif
+- **Échelles réalistes** : Tailles relatives correctes des planètes
+- **Orbites animées** : Mouvements planétaires en temps réel
+- **Textures planétaires** : Textures haute qualité pour chaque planète
+- **Contrôles interactifs** : Modification des paramètres orbitaux via l'interface
+
+### Gestion de Scènes
+- **Scènes multiples** : Système solaire, scène de démonstration, scènes personnalisées
+- **Chargement de modèles** : Support des fichiers OBJ avec textures
+- **Interface utilisateur** : Interface ImGui complète pour tous les réglages
+
+### Techniques de Rendu
+- **Uniform Buffer Objects** : Optimisation des performances
+- **Texture Management** : Chargement automatique de textures avec les modèles
+- **Wireframe Mode** : Mode filaire pour le debugging
+- **Camera Controller** : Navigation 3D fluide
+
+## 🛠️ Installation et Compilation
+
+### Prérequis
+- Windows 10/11
+- Visual Studio 2019/2022 ou MinGW-w64
+- OpenGL 3.3+
+
+### Dépendances Incluses
+- **GLFW** : Gestion des fenêtres et entrées
+- **GLEW** : Extensions OpenGL
+- **ImGui** : Interface utilisateur
+- **stb_image** : Chargement d'images
+- **tiny_obj_loader** : Chargement de modèles OBJ
+
+### Compilation
+```bash
+# Avec MinGW (MSYS2)
+cd c:\msys64\home\polom\Basic
+mkdir build && cd build
+cmake ..
+make
+
+# Ou utiliser le Makefile direct
+make
+```
+
+## 🎮 Utilisation
+
+### Navigation
+- **Souris** : Rotation de la caméra
+- **WASD** : Déplacement
+- **Molette** : Zoom
+- **Espace/Shift** : Monter/Descendre
+
+### Interface Utilisateur
+
+#### Scene Manager
+- Changement de scènes en temps réel
+- Création de nouvelles scènes vides
+- Navigation entre scènes
+
+#### Solar System Objects
+- Contrôle de la position et taille du soleil
+- Paramètres orbitaux des planètes (rayon, vitesse, taille)
+- Objets personnalisés chargés
+
+#### Shader Settings
+- **Basic Shader** : Éclairage Phong/Blinn-Phong complet
+- **Color Shader** : Rendu simple avec couleurs unies
+- **EnvMap Shader** : Environment mapping avec réflexions
+
+#### Scene Objects
+- Chargement de modèles 3D (.obj)
+- Changement de skybox via sélection de dossier
+- Gestion des objets personnalisés
+
+### Chargement de Contenu
+
+#### Modèles 3D
+1. Cliquer sur "Load 3D Model"
+2. Sélectionner un fichier .obj
+3. Le modèle apparaît avec ses textures automatiquement chargées
+
+#### Skybox Personnalisé
+1. Préparer un dossier avec 6 images : `right.png`, `left.png`, `top.png`, `bottom.png`, `front.png`, `back.png`
+2. Cliquer sur "Change Skybox"
+3. Sélectionner le dossier contenant les images
+
+#### Cubemaps pour Environment Mapping
+- Chaque objet peut avoir son propre cubemap
+- Boutons "Create Procedural CubeMap" et "Load CubeMap Directory"
+- Support des réflexions personnalisées par objet
