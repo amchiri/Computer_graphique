@@ -3,12 +3,17 @@
 #include "../imgui/imgui_impl_glfw.h"
 #include "../imgui/imgui_impl_opengl3.h"
 #include "../include/SceneManager.h"
+#include "../include/Skybox.h"  // Added Skybox include
 #include <windows.h>
 #include <commdlg.h>
+#include <shlobj.h>      // For shell browsing functions
 #include <filesystem>
 #include <GL/glew.h>
 #include <algorithm>
 #include <iostream>
+
+// Declare the external global skybox variable from BasicShader.cpp
+extern std::unique_ptr<Skybox> g_Skybox;
 
 UI::UI(GLFWwindow* window, int width, int height) 
     : m_Window(window)
@@ -583,6 +588,62 @@ void UI::ShowSceneControls() {
     if (ImGui::CollapsingHeader("Scene Objects")) {
         if (ImGui::Button("Load 3D Model")) {
             m_ShowLoadModelDialog = true;
+        }
+
+        // Add Skybox button for selecting directory
+        ImGui::SameLine();
+        if (ImGui::Button("Change Skybox")) {
+            // Use Windows File Dialog instead of COM-based folder browser
+            // This avoids the need for ole32 library
+            char szFolder[MAX_PATH] = {0};
+            BROWSEINFOA bi = {0};
+            bi.hwndOwner = glfwGetWin32Window(m_Window);
+            bi.lpszTitle = "Select folder containing skybox textures";
+            bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+            
+            LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
+            if (pidl != 0) {
+                // Get the selected directory path
+                SHGetPathFromIDListA(pidl, szFolder);
+                
+                // Free memory used
+                IMalloc* imalloc = 0;
+                if (SUCCEEDED(SHGetMalloc(&imalloc))) {
+                    imalloc->Free(pidl);
+                    imalloc->Release();
+                }
+                
+                // Use the selected folder path for skybox textures
+                if (strlen(szFolder) > 0) {
+                    std::filesystem::path skyboxDir = szFolder;
+                    // Print selected directory for debugging
+                    std::cout << "Selected skybox directory: " << skyboxDir << std::endl;
+                    
+                    // Call skybox loading function from global skybox object
+                    if (g_Skybox) {
+                        if (g_Skybox->LoadCubeMap(skyboxDir.string())) {
+                            std::cout << "Skybox loaded successfully from directory: " << skyboxDir << std::endl;
+                        } else {
+                            std::cerr << "Failed to load skybox from directory: " << skyboxDir << std::endl;
+                            ImGui::OpenPopup("Skybox Error");
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Error popup for skybox loading
+        if (ImGui::BeginPopupModal("Skybox Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Failed to load skybox textures from the selected directory.");
+            ImGui::Text("Make sure the directory contains either:");
+            ImGui::Text("- right.png, left.png, top.png, bottom.png, front.png, back.png");
+            ImGui::Text("- OR -");
+            ImGui::Text("- posx.png, negx.png, posy.png, negy.png, posz.png, negz.png");
+            
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
 
         if (ImGui::TreeNode("Custom Objects Only")) {

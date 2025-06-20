@@ -169,6 +169,72 @@ bool Skybox::LoadCubeMap() {
     return true;
 }
 
+bool Skybox::LoadCubeMap(std::string directory) {
+    // Définir les noms des fichiers du cubemap
+    std::vector<std::string> faceFiles = {
+        "right.png",   // +X
+        "left.png",    // -X  
+        "top.png",     // +Y
+        "bottom.png",  // -Y
+        "front.png",   // +Z
+        "back.png"     // -Z
+    };
+
+    // Construire le chemin vers le dossier assets/skybox
+    char exePath[MAX_PATH];
+    std::filesystem::path skyboxDir = directory;
+
+    std::cout << "Looking for skybox files in: " << skyboxDir << std::endl;
+
+    // Vérifier que le dossier existe
+    if (!std::filesystem::exists(skyboxDir)) {
+        std::cerr << "Skybox directory not found: " << skyboxDir << std::endl;
+        return CreateProceduralCubeMap(); // Fallback sur un cubemap procédural
+    }
+
+    // Construire les chemins complets
+    std::vector<std::string> fullPaths;
+    for (const auto& filename : faceFiles) {
+        std::filesystem::path fullPath = skyboxDir / filename;
+        if (std::filesystem::exists(fullPath)) {
+            fullPaths.push_back(fullPath.string());
+            std::cout << "Found: " << fullPath << std::endl;
+        } else {
+            std::cerr << "Missing skybox file: " << fullPath << std::endl;
+            return CreateProceduralCubeMap(); // Fallback si un fichier manque
+        }
+    }
+
+    // Charger le cubemap
+    glGenTextures(1, &m_TextureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, m_TextureID);
+
+    for (int i = 0; i < 6; i++) {
+        int width, height, channels;
+        unsigned char* data = stbi_load(fullPaths[i].c_str(), &width, &height, &channels, 0);
+        
+        if (data) {
+            GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8, width, height, 0,
+                         format, GL_UNSIGNED_BYTE, data);
+            stbi_image_free(data);
+            std::cout << "Loaded cubemap face " << i << ": " << fullPaths[i] << std::endl;
+        } else {
+            std::cerr << "Failed to load cubemap texture: " << fullPaths[i] << std::endl;
+            return CreateProceduralCubeMap();
+        }
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    std::cout << "Skybox cubemap loaded successfully!" << std::endl;
+    return true;
+}
+
 bool Skybox::CreateProceduralCubeMap() {
     std::cout << "Creating procedural cubemap for skybox..." << std::endl;
     

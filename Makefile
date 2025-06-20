@@ -1,6 +1,6 @@
 CXX = g++
 CXXFLAGS = -I./include -I./lib -I./imgui -DGLEW_STATIC
-LDFLAGS = -lglew32 -lglfw3 -lopengl32 -lglu32 -lcomdlg32
+LDFLAGS = -lglew32 -lglfw3 -lopengl32 -lglu32 -lcomdlg32 -lshell32
 
 SRC_DIR = src
 BUILD_DIR = build

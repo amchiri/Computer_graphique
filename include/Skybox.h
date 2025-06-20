@@ -14,6 +14,7 @@ public:
     bool Initialize(const char* texturePath = nullptr);
     void Draw(const Mat4& viewMatrix, const Mat4& projectionMatrix);
     void Cleanup();
+    bool LoadCubeMap(std::string directory);
 
 private:
     bool CreateBuffers();
